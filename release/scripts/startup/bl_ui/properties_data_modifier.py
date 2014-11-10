@@ -544,6 +544,10 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
             row.operator("object.multires_external_save", text="Save External...")
             row.label()
 
+    def MY_BMESH(self, layout, ob, md):
+        col = layout.column()
+        col.prop(md, "sides")
+
     def OCEAN(self, layout, ob, md):
         if not bpy.app.build_options.mod_oceansim:
             layout.label("Built without OceanSim modifier")

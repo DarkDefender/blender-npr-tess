@@ -81,6 +81,7 @@ EnumPropertyItem modifier_type_items[] = {
 	{eModifierType_Subsurf, "SUBSURF", ICON_MOD_SUBSURF, "Subdivision Surface", ""},
 	{eModifierType_Triangulate, "TRIANGULATE", ICON_MOD_TRIANGULATE, "Triangulate", ""},
 	{eModifierType_Wireframe, "WIREFRAME", ICON_MOD_WIREFRAME, "Wireframe", "Generate a wireframe on the edges of a mesh"},
+	{eModifierType_MyBMesh, "MY_BMESH", ICON_DOT /* dummy! */, "My BMesh", ""},
 	{0, "", 0, N_("Deform"), ""},
 	{eModifierType_Armature, "ARMATURE", ICON_MOD_ARMATURE, "Armature", ""},
 	{eModifierType_Cast, "CAST", ICON_MOD_CAST, "Cast", ""},
@@ -244,6 +245,8 @@ static StructRNA *rna_Modifier_refine(struct PointerRNA *ptr)
 			return &RNA_LaplacianDeformModifier;
 		case eModifierType_Wireframe:
 			return &RNA_WireframeModifier;
+		case eModifierType_MyBMesh:
+			return &RNA_MyBMeshModifier;
 		/* Default */
 		case eModifierType_None:
 		case eModifierType_ShapeKey:
@@ -3659,6 +3662,24 @@ static void rna_def_modifier_wireframe(BlenderRNA *brna)
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 }
 
+static void rna_def_modifier_mybmesh(BlenderRNA *brna)
+{
+	StructRNA *srna;
+	PropertyRNA *prop;
+
+	srna = RNA_def_struct(brna, "MyBMeshModifier", "Modifier");
+	RNA_def_struct_ui_text(srna, "Wireframe Modifier", "Wireframe effect modifier");
+	RNA_def_struct_sdna(srna, "MyBMeshModifierData");
+	RNA_def_struct_ui_icon(srna, ICON_MOD_MESHDEFORM);
+
+	prop = RNA_def_property(srna, "sides", PROP_INT, PROP_UNSIGNED);
+	RNA_def_property_int_sdna(prop, NULL, "sides");
+	RNA_def_property_range(prop, 3, 10000);
+	RNA_def_property_ui_range(prop, 3, 100, 1, 0);
+	RNA_def_property_ui_text(prop, "Sides", "Remove faces with N sides");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+}
+
 void RNA_def_modifier(BlenderRNA *brna)
 {
 	StructRNA *srna;
@@ -3771,6 +3792,7 @@ void RNA_def_modifier(BlenderRNA *brna)
 	rna_def_modifier_meshcache(brna);
 	rna_def_modifier_laplaciandeform(brna);
 	rna_def_modifier_wireframe(brna);
+	rna_def_modifier_mybmesh(brna);
 }
 
 #endif
