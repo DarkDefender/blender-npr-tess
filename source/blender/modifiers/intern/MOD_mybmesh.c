@@ -34,24 +34,88 @@
 #include "BKE_cdderivedmesh.h"
 #include "BKE_modifier.h"
 #include "BKE_deform.h"
+#include "BKE_subsurf.h"
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
 
 #include "MOD_util.h"
 
+#include "intern/CCGSubSurf.h"
+
+//TODO this modifier depends on OSD. So if it's not compiled in, remove this modifier
+#include <opensubdiv/osdutil/evaluator_capi.h>
+
+void verts_to_limit(BMesh *bm, CCGSubSurf *ss){
+	
+	int i;
+	float new_co[3];
+	
+	BMIter iter_v, iter_f;
+	BMVert *v;
+    BMFace *f;
+	BM_ITER_MESH_INDEX (f, &iter_f, bm, BM_FACES_OF_MESH, i) {
+			BM_ITER_ELEM (v, &iter_v, f, BM_VERTS_OF_FACE) {
+				new_co = {0.0f, 0.0f, 0.0f};
+				openSubdiv_evaluateLimit(ss->osd_evaluator, i, 0, 0, new_co, NULL, NULL);
+				v.co = new_co;
+			}
+	}
+
+}
+
 /* bmesh only function */
-static void mybmesh_do(BMesh *bm, MyBMeshModifierData *mmd)
+static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd)
 {
+
+    //subsurf_make_derived_from_derived( 
+	
+	//opensubdiv_ensureEvaluator(  <<--- USE this
+	
+	//opensubdiv_initEvaluatorFace(
+	
+	//opensubdiv_initEvaluator(
+
+	//ccgSubSurf_free( <<--- for freeing "ss"
+
+    //From subsurf_calculate_limit_positions
+	CCGSubSurf *ss = _getSubSurf(NULL, 1, 3, CCG_USE_ARENA);
+	ss_sync_from_derivedmesh(ss, dm, NULL, 0);
+	
+    //Get opensubdiv evaluator inited
+	opensubdiv_ensureEvaluator(ss);
+	opensubdiv_updateCoarsePositions(ss);
+
+	DerivedMesh *result;
+	BMesh *bm_orig, *bm;
+
+	bm = DM_to_bmesh(dm, true);
+    
+    verts_to_limit(bm, ss);
+
+	BM_mesh_triangulate(bm, MOD_TRIANGULATE_QUAD_FIXED, MOD_TRIANGULATE_NGON_BEAUTY, false, NULL, NULL);
+
+	result = CDDM_from_bmesh(bm, true);
+
+
+	ccgSubSurf_free(ss);
+	BM_mesh_free(bm);
+
+	result->dirty |= DM_DIRTY_NORMALS;
+
+	//TODO use this to check if we need to subdivide the mesh to get a quad mesh.
+	if(0){
 	BMIter iter;
 	BMFace *f, *f_next;
-
 	/* use the mutable iterator so we can remove data as its looped over */
-	BM_ITER_MESH_MUTABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
+	BM_ITER_MESH_MUTYABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
 		if (f->len == mmd->sides) {
 			BM_face_kill(bm, f);
 		}
 	}
+	}
+
+	return result;
 }
 
 /* MyBMesh */
@@ -77,19 +141,12 @@ static DerivedMesh *applyModifier(ModifierData *md, struct Object *UNUSED(ob),
                                   ModifierApplyFlag UNUSED(flag))
 {
 	DerivedMesh *result;
-	BMesh *bm;
 
 	MyBMeshModifierData *mmd = (MyBMeshModifierData *)md;
 
-	bm = DM_to_bmesh(dm, true);
-
-	mybmesh_do(bm, mmd);
-
-	result = CDDM_from_bmesh(bm, true);
-
-	BM_mesh_free(bm);
-
-	result->dirty |= DM_DIRTY_NORMALS;
+	if (!(result = triangulate_dm(dm, mmd))) {
+		return dm;
+	}
 
 	return result;
 }
