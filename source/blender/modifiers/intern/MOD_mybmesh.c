@@ -60,11 +60,11 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 				float new_co[3] = {0.0f, 0.0f, 0.0f};
 				float u,v;
 				switch(j){
-					case 1 : u = 0, v = 1;
+					case 1 : u = 1, v = 0;
 							 break;
-					case 2 : u = 1, v = 0;
-                             break;
-					case 3 : u = v = 1;
+					case 2 : u = v = 1;
+							 break;
+					case 3 : u = 0, v = 1;
 							 break;
 					default: u = v = 0;
 							 break;
@@ -74,7 +74,6 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 				vert->co[1] = new_co[1];
 				vert->co[2] = new_co[2];
 			}
-			break;
 	}
 
 }
