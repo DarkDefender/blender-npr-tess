@@ -46,20 +46,35 @@
 //TODO this modifier depends on OSD. So if it's not compiled in, remove this modifier
 #include <opensubdiv/osdutil/evaluator_capi.h>
 
-void verts_to_limit(BMesh *bm, CCGSubSurf *ss){
+struct OpenSubdiv_EvaluatorDescr;
+
+static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 	
-	int i;
-	float new_co[3];
+	int i, j;
 	
 	BMIter iter_v, iter_f;
-	BMVert *v;
+	BMVert *vert;
     BMFace *f;
 	BM_ITER_MESH_INDEX (f, &iter_f, bm, BM_FACES_OF_MESH, i) {
-			BM_ITER_ELEM (v, &iter_v, f, BM_VERTS_OF_FACE) {
-				new_co = {0.0f, 0.0f, 0.0f};
-				openSubdiv_evaluateLimit(ss->osd_evaluator, i, 0, 0, new_co, NULL, NULL);
-				v.co = new_co;
+			BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, j) {
+				float new_co[3] = {0.0f, 0.0f, 0.0f};
+				float u,v;
+				switch(j){
+					case 1 : u = 0, v = 1;
+							 break;
+					case 2 : u = 1, v = 0;
+                             break;
+					case 3 : u = v = 1;
+							 break;
+					default: u = v = 0;
+							 break;
+				}
+				openSubdiv_evaluateLimit(eval, i, u, v, new_co, NULL, NULL);
+				vert->co[0] = new_co[0];
+				vert->co[1] = new_co[1];
+				vert->co[2] = new_co[2];
 			}
+			break;
 	}
 
 }
@@ -78,20 +93,20 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd)
 
 	//ccgSubSurf_free( <<--- for freeing "ss"
 
-    //From subsurf_calculate_limit_positions
-	CCGSubSurf *ss = _getSubSurf(NULL, 1, 3, CCG_USE_ARENA);
-	ss_sync_from_derivedmesh(ss, dm, NULL, 0);
-	
-    //Get opensubdiv evaluator inited
-	opensubdiv_ensureEvaluator(ss);
-	opensubdiv_updateCoarsePositions(ss);
-
 	DerivedMesh *result;
 	BMesh *bm_orig, *bm;
 
+	CCGSubSurf *ss;
+    struct OpenSubdiv_EvaluatorDescr *osd_eval;
+    
+	ss = get_ss_for_osd(dm);
+	
+	//TODO fix the get_osd_eval declaration ("WITH_OPENSUBDIV" problem)
+	osd_eval = get_osd_eval(ss);
+
 	bm = DM_to_bmesh(dm, true);
     
-    verts_to_limit(bm, ss);
+    verts_to_limit(bm, osd_eval);
 
 	BM_mesh_triangulate(bm, MOD_TRIANGULATE_QUAD_FIXED, MOD_TRIANGULATE_NGON_BEAUTY, false, NULL, NULL);
 
@@ -108,7 +123,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd)
 	BMIter iter;
 	BMFace *f, *f_next;
 	/* use the mutable iterator so we can remove data as its looped over */
-	BM_ITER_MESH_MUTYABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
+	BM_ITER_MESH_MUTABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
 		if (f->len == mmd->sides) {
 			BM_face_kill(bm, f);
 		}
@@ -144,7 +159,7 @@ static DerivedMesh *applyModifier(ModifierData *md, struct Object *UNUSED(ob),
 
 	MyBMeshModifierData *mmd = (MyBMeshModifierData *)md;
 
-	if (!(result = triangulate_dm(dm, mmd))) {
+	if (!(result = mybmesh_do(dm, mmd))) {
 		return dm;
 	}
 

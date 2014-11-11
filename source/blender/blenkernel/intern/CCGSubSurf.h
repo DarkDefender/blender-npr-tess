@@ -199,6 +199,10 @@ struct DerivedMesh;
 void ccgSubSurf_setUVCoordsFromDM(CCGSubSurf *ss,
                                   struct DerivedMesh *dm,
                                   bool subdivide_uvs);
+
+struct OpenSubdiv_EvaluatorDescr;
 #endif
+
+struct OpenSubdiv_EvaluatorDescr *get_osd_eval(CCGSubSurf *ss);
 
 #endif  /* __CCGSUBSURF_H__ */

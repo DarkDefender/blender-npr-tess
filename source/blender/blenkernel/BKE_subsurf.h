@@ -72,6 +72,8 @@ struct DerivedMesh *subsurf_make_derived_from_derived(
 
 void subsurf_calculate_limit_positions(struct Mesh *me, float (*r_positions)[3]);
 
+struct CCGSubSurf *get_ss_for_osd(struct DerivedMesh *dm);
+
 /* get gridsize from 'level', level must be greater than zero */
 int BKE_ccg_gridsize(int level);
 

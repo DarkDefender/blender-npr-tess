@@ -3164,6 +3164,11 @@ static void ccgSubSurf__sync(CCGSubSurf *ss)
 #endif
 }
 
+OpenSubdiv_EvaluatorDescr *get_osd_eval(CCGSubSurf *ss){
+	ccgSubSurf__sync(ss);
+	return ss->osd_evaluator;
+}
+
 #  undef OSD_LOG
 #else  /* WITH_OPENSUBDIV */
 static void ccgSubSurf__sync(CCGSubSurf *ss)

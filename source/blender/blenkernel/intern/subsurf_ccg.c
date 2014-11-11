@@ -4523,3 +4523,10 @@ void subsurf_calculate_limit_positions(Mesh *me, float (*r_positions)[3])
 
 	dm->release(dm);
 }
+
+CCGSubSurf *get_ss_for_osd(DerivedMesh *dm){
+	CCGSubSurf *ss = _getSubSurf(NULL, 1, 3, CCG_USE_ARENA);
+	ss_sync_from_derivedmesh(ss, dm, NULL, 0);
+	
+	return ss;
+}
