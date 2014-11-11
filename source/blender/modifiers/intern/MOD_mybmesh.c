@@ -76,13 +76,52 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 				vert->co[0] = new_co[0];
 				vert->co[1] = new_co[1];
 				vert->co[2] = new_co[2];
+				printf("j: %d\n",j);
 			}
-			if(n){
-             break;
-			}
-			n++;
+			printf("i: %d\n",i);
+			printf("face i: %d\n", BM_elem_index_get(f));
 	}
 
+}
+
+
+static struct OpenSubdiv_EvaluatorDescr *create_osd_eval(BMesh *bm){
+	int subdiv_levels = 1;
+	int no_of_verts = BM_mesh_elem_count(bm, BM_VERT);
+
+	int j;
+	int face_vert_index[4];
+	float vert_array[3 * no_of_verts];
+
+	BMIter iter_v, iter_f;
+	BMVert *vert;
+    BMFace *f;
+
+	struct OpenSubdiv_EvaluatorDescr *osd_evaluator;
+	osd_evaluator = openSubdiv_createEvaluatorDescr(no_of_verts);
+
+	BM_ITER_MESH (f, &iter_f, bm, BM_FACES_OF_MESH) {
+		BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, j) {
+			face_vert_index[j] = BM_elem_index_get(vert);
+		}
+		//TODO this will only work with quad meshes. Set up checks so only quad meshes are passed through.
+		openSubdiv_createEvaluatorDescrFace(osd_evaluator, 4, face_vert_index);
+	}
+
+	//TODO add check to see if this fails
+	openSubdiv_finishEvaluatorDescr(osd_evaluator, subdiv_levels, OSD_SCHEME_CATMARK);
+
+	BM_ITER_MESH_INDEX (vert, &iter_v, bm, BM_VERTS_OF_MESH, j) {
+		vert_array[3*j] = vert->co[0];
+		vert_array[3*j + 1] = vert->co[1];
+		vert_array[3*j + 2] = vert->co[2];
+	}
+
+    openSubdiv_setEvaluatorCoarsePositions(osd_evaluator,
+                                           vert_array,
+                                           no_of_verts);
+
+	return osd_evaluator;
 }
 
 /* bmesh only function */
@@ -102,16 +141,18 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd)
 	DerivedMesh *result;
 	BMesh *bm_orig, *bm;
 
-	CCGSubSurf *ss;
+	//CCGSubSurf *ss;
     struct OpenSubdiv_EvaluatorDescr *osd_eval;
     
-	ss = get_ss_for_osd(dm);
+	//ss = get_ss_for_osd(dm);
 	
 	//TODO fix the get_osd_eval declaration ("WITH_OPENSUBDIV" problem)
-	osd_eval = get_osd_eval(ss);
+	//osd_eval = get_osd_eval(ss);
 
 	bm = DM_to_bmesh(dm, true);
     
+    osd_eval = create_osd_eval(bm);
+
     verts_to_limit(bm, osd_eval);
 
 	BM_mesh_triangulate(bm, MOD_TRIANGULATE_QUAD_FIXED, MOD_TRIANGULATE_NGON_BEAUTY, false, NULL, NULL);
@@ -119,8 +160,10 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd)
 	result = CDDM_from_bmesh(bm, true);
 
 
-	ccgSubSurf_free(ss);
+	//ccgSubSurf_free(ss);
 	BM_mesh_free(bm);
+
+	openSubdiv_deleteEvaluatorDescr(osd_eval);
 
 	result->dirty |= DM_DIRTY_NORMALS;
 
