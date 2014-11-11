@@ -74,6 +74,9 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 				vert->co[1] = new_co[1];
 				vert->co[2] = new_co[2];
 			}
+			if(i == 1){
+             break;
+			}
 	}
 
 }
