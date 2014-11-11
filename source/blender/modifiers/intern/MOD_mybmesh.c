@@ -55,6 +55,9 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 	BMIter iter_v, iter_f;
 	BMVert *vert;
     BMFace *f;
+
+	int n = 0;
+
 	BM_ITER_MESH_INDEX (f, &iter_f, bm, BM_FACES_OF_MESH, i) {
 			BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, j) {
 				float new_co[3] = {0.0f, 0.0f, 0.0f};
@@ -74,9 +77,10 @@ static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
 				vert->co[1] = new_co[1];
 				vert->co[2] = new_co[2];
 			}
-			if(i == 1){
+			if(n){
              break;
 			}
+			n++;
 	}
 
 }
