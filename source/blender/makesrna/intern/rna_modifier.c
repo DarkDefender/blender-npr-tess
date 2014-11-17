@@ -3672,12 +3672,11 @@ static void rna_def_modifier_mybmesh(BlenderRNA *brna)
 	RNA_def_struct_sdna(srna, "MyBMeshModifierData");
 	RNA_def_struct_ui_icon(srna, ICON_MOD_MESHDEFORM);
 
-	prop = RNA_def_property(srna, "sides", PROP_INT, PROP_UNSIGNED);
-	RNA_def_property_int_sdna(prop, NULL, "sides");
-	RNA_def_property_range(prop, 3, 10000);
-	RNA_def_property_ui_range(prop, 3, 100, 1, 0);
-	RNA_def_property_ui_text(prop, "Sides", "Remove faces with N sides");
-	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+ 	prop = RNA_def_property(srna, "camera_object", PROP_POINTER, PROP_NONE);
+	RNA_def_property_pointer_sdna(prop, NULL, "camera_ob");
+	RNA_def_property_ui_text(prop, "Camera Object", "Object to use as camera location");
+	RNA_def_property_flag(prop, PROP_EDITABLE | PROP_ID_SELF_CHECK);
+	RNA_def_property_update(prop, 0, "rna_Modifier_dependency_update");
 }
 
 void RNA_def_modifier(BlenderRNA *brna)

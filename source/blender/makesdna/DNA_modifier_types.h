@@ -1369,8 +1369,9 @@ enum {
 /* Modifier data stored in the blend file */
 typedef struct MyBMeshModifierData {
 	ModifierData modifier;
-	int sides;
+	struct Object *camera_ob;
 	int flag;  /* options stored here */
+	short pad[2];
 } MyBMeshModifierData;
 
 enum {

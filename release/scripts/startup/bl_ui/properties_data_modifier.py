@@ -546,7 +546,8 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
 
     def MY_BMESH(self, layout, ob, md):
         col = layout.column()
-        col.prop(md, "sides")
+        col.label(text="Camera Object:")
+        col.prop(md, "camera_object", text="")
 
     def OCEAN(self, layout, ob, md):
         if not bpy.app.build_options.mod_oceansim:
