@@ -423,6 +423,8 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 	int orig_edges = BM_mesh_elem_count(bm_orig, BM_EDGE);
     int initial_edges = BM_mesh_elem_count(bm, BM_EDGE);
 
+    printf("Buffer count: %d\n", new_vert_buffer->count);
+
 	BM_ITER_MESH_INDEX (e, &iter_e, bm, BM_EDGES_OF_MESH, i) {
         if( !(i < initial_edges) ){
 			//Now we are working on edges we added in this function
@@ -442,27 +444,30 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 			bool v1_has_face = false, v2_has_face = false;
 
 			if( (v1_idx + 1) > orig_verts){
-				v_buf1 = BLI_buffer_at(new_vert_buffer, Vert_buf, v1_idx + 1 - orig_verts);
+				printf("num1: %d\n", v1_idx - orig_verts);
+				v_buf1 = BLI_buffer_at(new_vert_buffer, Vert_buf, v1_idx - orig_verts);
 				v1_u = v_buf1.u;
-				v1_v = v_buf2.v;
+				v1_v = v_buf1.v;
 				if( v_buf1.orig_face ){
 					v1_has_face = true;
 				}
 			} else {
-				v1 = BM_vert_at_index_find( bm_orig, BM_elem_index_get( e->v1 ) ); 
+				v1 = BM_vert_at_index_find( bm_orig, v1_idx ); 
 			}
 			if( (v2_idx + 1) > orig_verts){
-				v_buf2 = BLI_buffer_at(new_vert_buffer, Vert_buf, v2_idx + 1 - orig_verts);
+				printf("num2: %d\n", v2_idx - orig_verts);
+				v_buf2 = BLI_buffer_at(new_vert_buffer, Vert_buf, v2_idx - orig_verts);
 				v2_u = v_buf2.u;
 				v2_v = v_buf2.v;
 				if( v_buf2.orig_face ){
 					v2_has_face = true;
 				}
 			} else {
-				v2 = BM_vert_at_index_find( bm_orig, BM_elem_index_get( e->v2 ) ); 
+				v2 = BM_vert_at_index_find( bm_orig, v2_idx ); 
 			}
 
 			if( v1 && v2 ){
+				printf("v1 & v2\n");
 				//TODO make this a external function
 				if( i < orig_edges ){ 
 				//this edge is on the original mesh
@@ -486,37 +491,69 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 				get_uv_coord(v1, f, &v1_u, &v1_v);
 				get_uv_coord(v2, f, &v2_u, &v2_v);
 			} else if ( v1 ){
+				printf("v1\n");
 				if( v2_has_face ){
+					printf("face\n");
 					f = v_buf2.orig_face; 
 				} else {
 					BMVert *vert_arr[3];
 
-                    vert_arr[0] = v1;
-					vert_arr[1] = v_buf2.orig_edge->v1;
-					vert_arr[2] = v_buf2.orig_edge->v2;
-                    //TODO check if this fails
-					BM_face_exists_overlap(vert_arr, 3, &f);
+					vert_arr[0] = v_buf2.orig_edge->v1;
+					vert_arr[1] = v_buf2.orig_edge->v2;
+                    vert_arr[2] = v1;
+                    //TODO check if get face fails
+					if( v_buf2.orig_edge->v1 == v2 || v_buf2.orig_edge->v2 == v2 ){
+						printf("Same vert!\n");
+						BM_face_exists_overlap(vert_arr, 2, &f);
+					} else {
+						BM_face_exists_overlap(vert_arr, 3, &f);
+					}
 					convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
 				}
 				get_uv_coord(v1, f, &v1_u, &v1_v);
 			} else if ( v2 ){
+				printf("v2\n");
 				if( v1_has_face ){
+					printf("face\n");
 					f = v_buf1.orig_face; 
 				} else {
 					BMVert *vert_arr[3];
 
-                    vert_arr[0] = v2;
-					vert_arr[1] = v_buf1.orig_edge->v1;
-					vert_arr[2] = v_buf1.orig_edge->v2;
-                    //TODO check if this fails
-					BM_face_exists_overlap(vert_arr, 3, &f);
+					vert_arr[0] = v_buf1.orig_edge->v1;
+					vert_arr[1] = v_buf1.orig_edge->v2;
+                    vert_arr[2] = v2;
+                    //TODO check if get face fails
+					if( v_buf1.orig_edge->v1 == v2 || v_buf1.orig_edge->v2 == v2 ){
+						printf("Same vert!\n");
+						BM_face_exists_overlap(vert_arr, 2, &f);
+					} else {
+						BM_face_exists_overlap(vert_arr, 3, &f);
+					}
 					convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
 				}
 				get_uv_coord(v2, f, &v2_u, &v2_v);
 			} else {
-				//TODO This should not happen. Check if this really is the case.
                 printf("Two verts on the same orig face\n");
-				f = v_buf1.orig_face;
+				if( v1_has_face || v2_has_face ){
+					if( v1_has_face && v2_has_face ){
+						printf("face 1 & 2\n");
+						f = v_buf1.orig_face; 
+					} else if ( v1_has_face ) {
+						printf("face1\n");
+						f = v_buf1.orig_face; 
+						convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
+					} else {
+						printf("face2\n");
+						f = v_buf2.orig_face; 
+						convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v2_v);
+					}
+				} else {
+					//No orig face. So this in on a orig edge. So just get the face from the v1 edge
+					BMVert *vert_arr[] = {v_buf1.orig_edge->v1 ,v_buf1.orig_edge->v2};
+					BM_face_exists_overlap(vert_arr, 2, &f);
+					convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
+					convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
+				}
 			}
 			face_index = BM_elem_index_get(f);
 		}
