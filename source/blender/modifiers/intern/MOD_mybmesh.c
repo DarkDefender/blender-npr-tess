@@ -267,7 +267,7 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 			v_buf.orig_face = f;
 		}
 
-		//TODO can I just check each very once?
+		//TODO can I just check each vert once?
 		get_uv_coord(v1, f, &v1_u, &v1_v);
 		get_uv_coord(v2, f, &v2_u, &v2_v);
 
@@ -351,6 +351,139 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 
 	}
 
+}
+
+static float get_k_r(struct OpenSubdiv_EvaluatorDescr *eval, int face_index, float u, float v, const float cam_loc[3]){
+	float du[3], dv[3], P[3], no[3], d1[3], d2[3];
+    float k1, k2;
+	float I[2][2], II[2][2];
+	openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
+
+	cross_v3_v3v3(no, dv, du);
+	normalize_v3(no);
+
+    //http://en.wikipedia.org/wiki/Principal_curvature
+
+	I[0][0] = dot_v3v3(du, du);
+	I[0][1] = dot_v3v3(du, dv);
+	I[1][0] = dot_v3v3(du, dv);
+	I[1][1] = dot_v3v3(dv, dv);
+
+	//get dudu dudv dvdv
+	{
+		float dudu[3], dudv[3], dvdv[3];
+		float du_old[3], dv_old[3];
+
+        float step_u, step_v;
+
+		copy_v3_v3(du_old, du);
+		copy_v3_v3(dv_old, dv);
+
+		if( u < 0.9f ){
+			step_u = 0.1f;
+		} else {
+			step_u = -0.1f;
+		}
+
+		openSubdiv_evaluateLimit(eval, face_index, u + step_u, v, P, du, dv);
+
+        sub_v3_v3v3(dudu, du, du_old);
+        sub_v3_v3v3(dudv, dv, dv_old);
+
+		mul_v3_fl(dudu, 1.0f/step_u);
+		mul_v3_fl(dudv, 1.0f/step_u);
+
+		if( v < 0.9f ){
+			step_v = 0.1f;
+		} else {
+			step_v = -0.1f;
+		}
+
+		openSubdiv_evaluateLimit(eval, face_index, u, v + step_v, P, du, dv);
+
+        sub_v3_v3v3(dvdv, dv, dv_old);
+		mul_v3_fl(dvdv, 1.0f/step_v);
+
+		II[0][0] = dot_v3v3(dudu, no);
+		II[0][1] = dot_v3v3(dudv, no);
+		II[1][0] = dot_v3v3(dudv, no);
+		II[1][1] = dot_v3v3(dvdv, no);
+
+		copy_v3_v3(du, du_old);
+		copy_v3_v3(dv, dv_old);
+
+	}
+	{
+		float S[2][2];
+		float detI = determinant_m2(I[0][0], I[0][1], I[1][0], I[1][1]);
+
+		if(fabsf(detI) < 1e-20){
+			detI = 1e-20;
+			printf("detI near zero!!!\n");
+		}
+
+		S[0][0] = (II[0][1]*I[0][1] - II[0][0]*I[1][1]) / detI;
+		S[0][1] = (II[1][1]*I[0][1] - II[0][1]*I[1][1]) / detI;
+		S[1][0] = (II[0][0]*I[0][1] - II[0][1]*I[0][0]) / detI;
+		S[1][1] = (II[0][1]*I[0][1] - II[1][1]*I[0][0]) / detI;
+
+		{
+			//TODO perhaps remove pdir2
+			float pdir1[2], pdir2[2];
+			float traceS = S[0][0] + S[1][1];
+			float detS = determinant_m2(S[0][0], S[0][1], S[1][0], S[1][1]);
+			float diff = traceS*traceS - 4.0f * detS;
+
+			if(diff >= 0){
+				float sqrtDiff = sqrt3f(diff);
+				k1 = 0.5f * (traceS + sqrtDiff);
+				k2 = 0.5f * (traceS - sqrtDiff);
+				if(fabsf(k1) < fabsf(k2)){
+					float swap = k1;
+					k1 = k2;
+					k2 = swap;
+				}
+				if(fabsf(S[1][0]) > 1e-20){
+					copy_v2_fl2(pdir1, k1 - S[1][1], S[1][0]);
+					copy_v2_fl2(pdir2, k2 - S[1][1], S[1][0]);
+				}else if (fabsf(S[0][1]) > 1e-20){
+					copy_v2_fl2(pdir1, S[0][1], k1 - S[0][0]);
+					copy_v2_fl2(pdir2, S[0][1], k2 - S[0][0]);
+				}
+				normalize_v2(pdir1);
+				normalize_v2(pdir2);
+			}else{
+				//k1 = 0.0f;
+				//k2 = 0.0f;
+				//d1 = tanU;
+				//d2 = tanV;
+				printf("diff neg\n");
+				return 0;
+			}
+
+			mul_v3_fl(du, pdir1[0]);
+			mul_v3_fl(dv, pdir1[1]);
+            add_v3_v3v3(d1, du, dv);
+            normalize_v3(d1);
+			cross_v3_v3v3(d2, no, d1);
+            //d2 = d1 ^ limitNormal; //tanU * pdir2[0] + tanV * pdir2[1];
+		}
+	}
+	{
+		float view_vec[3], ndotv, sintheta, u2, v2, k_r;
+
+		sub_v3_v3v3(view_vec, P, cam_loc);
+		normalize_v3(view_vec);
+
+		ndotv = dot_v3v3(no, view_vec);
+		sintheta = 1.0f - ndotv*ndotv;
+		u = dot_v3v3(view_vec, d1);
+		v = dot_v3v3(view_vec, d2);
+		u2 = u*u;
+		v2 = v*v;
+		k_r = (k1 * u2 + k2 * v2) / sintheta;
+		return k_r;
+	}
 }
 
 static void convert_uv_to_new_face(BMEdge *e, BMFace *f, float *u, float *v){
@@ -569,7 +702,37 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 	}
 }
 
+static void cusp_detection(BMesh *bm_orig, struct OpenSubdiv_EvaluatorDescr *eval, const float cam_loc[3]){
+	BMEdge *e;
+	BMIter iter_e;
+	int i;
+	float v1_u, v1_v, v2_u, v2_v;
+
+	BM_ITER_MESH_INDEX (e, &iter_e, bm_orig, BM_EDGES_OF_MESH, i) {
+		BMFace *f;
+		BMIter iter_f;
+		int face_index;
+		BM_ITER_ELEM (f, &iter_f, e, BM_FACES_OF_EDGE) {
+			//Get first face
+			break;
+		}
+		face_index = BM_elem_index_get(f);
+		get_uv_coord(e->v1, f, &v1_u, &v1_v);
+		get_uv_coord(e->v2, f, &v2_u, &v2_v);
+
+		{
+			float k_r1 = get_k_r(eval, face_index, v1_u, v1_v, cam_loc);
+			float k_r2 = get_k_r(eval, face_index, v2_u, v2_v, cam_loc);
+			if( (k_r1 > 0) != (k_r2 > 0) ){
+				//k_r sign crossing!
+				printf("found k_r sign crossing\n");
+			}
+		}
+	}                                                     
+}
+
 static struct OpenSubdiv_EvaluatorDescr *create_osd_eval(BMesh *bm){
+	//TODO create FAR meshes instead. (Perhaps the code in contour subdiv can help?)
 	int subdiv_levels = 1;
 	int no_of_verts = BM_mesh_elem_count(bm, BM_VERT);
 
@@ -625,26 +788,11 @@ static void debug_colorize(BMesh *bm, const float cam_loc[3]){
 static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float cam_loc[3])
 {
 
-    //subsurf_make_derived_from_derived( 
-	
-	//opensubdiv_ensureEvaluator(  <<--- USE this
-	
-	//opensubdiv_initEvaluatorFace(
-	
-	//opensubdiv_initEvaluator(
-
-	//ccgSubSurf_free( <<--- for freeing "ss"
-
 	DerivedMesh *result;
 	BMesh *bm_orig, *bm;
 
 	//CCGSubSurf *ss;
     struct OpenSubdiv_EvaluatorDescr *osd_eval;
-    
-	//ss = get_ss_for_osd(dm);
-	
-	//TODO fix the get_osd_eval declaration ("WITH_OPENSUBDIV" problem)
-	//osd_eval = get_osd_eval(ss);
 
 	bm = DM_to_bmesh(dm, true);
 	//Keep a copy of the original mesh
@@ -672,14 +820,15 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 
 		// (6.2) Contour Insertion
 
-		contour_insertion(bm, bm_orig, &new_vert_buffer, NULL, osd_eval, cam_loc);
+        cusp_detection(bm_orig, osd_eval, cam_loc);
+
+		//contour_insertion(bm, bm_orig, &new_vert_buffer, NULL, osd_eval, cam_loc);
 
 		debug_colorize(bm, cam_loc);
 		BLI_buffer_free(&new_vert_buffer);
 	}
 	result = CDDM_from_bmesh(bm, true);
 
-	//ccgSubSurf_free(ss);
 	BM_mesh_free(bm);
 	BM_mesh_free(bm_orig);
 
