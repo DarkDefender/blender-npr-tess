@@ -702,30 +702,345 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 	}
 }
 
-static void cusp_detection(BMesh *bm_orig, struct OpenSubdiv_EvaluatorDescr *eval, const float cam_loc[3]){
-	BMEdge *e;
-	BMIter iter_e;
-	int i;
-	float v1_u, v1_v, v2_u, v2_v;
+static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam_loc[3], float co_arr[3][3],
+		const bool b_arr[3], const float u_arr[3], const float v_arr[3], const int face_index, float cusp_co[3]){
+	//If area is <= 1e-14, then we set the center of the triangle as the cusp
+	//TODO the paper has 1e-20
+	if( area_tri_v3(co_arr[0], co_arr[1], co_arr[2]) <= 1e-14 ){
+		cent_tri_v3(cusp_co, co_arr[0], co_arr[1], co_arr[2]);
+		return true;		
+	}
 
-	BM_ITER_MESH_INDEX (e, &iter_e, bm_orig, BM_EDGES_OF_MESH, i) {
-		BMFace *f;
-		BMIter iter_f;
-		int face_index;
-		BM_ITER_ELEM (f, &iter_f, e, BM_FACES_OF_EDGE) {
-			//Get first face
-			break;
+	bool normal_sign_cross(const bool bool_arr[3]){
+		int i;
+		bool temp = bool_arr[0];
+		for(i = 1; i < 3; i++){
+			if(temp != bool_arr[i]){
+				return true;
+			}
 		}
-		face_index = BM_elem_index_get(f);
-		get_uv_coord(e->v1, f, &v1_u, &v1_v);
-		get_uv_coord(e->v2, f, &v2_u, &v2_v);
+		return false;
+	}
 
+	bool k_r_sign_cross(const float u[3], const float v[3]){
+		float k_r1 = get_k_r(eval, face_index, u[0], v[0], cam_loc);
+		float k_r2 = get_k_r(eval, face_index, u[1], v[1], cam_loc);
+		if( (k_r1 > 0) != (k_r2 > 0) ){
+			//k_r sign crossing!
+			return true;
+		} else {
+			//check last vert
+			float k_r3 = get_k_r(eval, face_index, u[2], v[2], cam_loc);
+			if( (k_r1 > 0) != (k_r3 > 0) ){
+				return true;
+			}
+		}
+		return false;
+	}
+
+    //print_m3("co_arr", co_arr);
+
+	//printf("area: %.20f\n", area_tri_v3(co_arr[0], co_arr[1], co_arr[2]));
+
+	{
+		//Which edge is the longest in parameter space?
+		float e1_len, e2_len, e3_len, du[3], dv[3];
+		float new_co[3], uv_co[2];
+		bool new_b;
+
+		e1_len = len_v3v3(co_arr[0], co_arr[1]);
+		e2_len = len_v3v3(co_arr[0], co_arr[2]);
+		e3_len = len_v3v3(co_arr[1], co_arr[2]);
+
+		/*
+        printf("Before edge len\n");
+		printf("e1: %f\n", e1_len);
+		printf("e2: %f\n", e2_len);
+		printf("e3: %f\n", e3_len);
+        */
+
+		//TODO there must be a way to reuse more code here...
+		if(e1_len >= e2_len){
+			if(e1_len >= e3_len){
+				//e1
+				float uv_1[] = {u_arr[0], v_arr[0]};
+				float uv_2[] = {u_arr[1], v_arr[1]};
+				
+				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
+				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
+				new_b = calc_if_B(cam_loc, new_co, du, dv);
+				{
+					bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
+					float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
+					float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
+
+					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+						float new_co_arr[3][3];
+						copy_m3_m3(new_co_arr, co_arr);
+						copy_v3_v3(new_co_arr[1], new_co);
+						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+							return true;
+						}
+					}
+				}
+				{
+					bool new_b_arr[3] = { new_b, b_arr[1], b_arr[2] };
+					float new_u_arr[3] = { uv_co[0], u_arr[1], u_arr[2] };
+					float new_v_arr[3] = { uv_co[1], v_arr[1], v_arr[2] };
+
+					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+						float new_co_arr[3][3];
+						copy_m3_m3(new_co_arr, co_arr);
+						copy_v3_v3(new_co_arr[0], new_co);
+						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+							return true;
+						}
+					}
+				}
+			} else {
+				//e3
+				float uv_1[] = {u_arr[2], v_arr[2]};
+				float uv_2[] = {u_arr[1], v_arr[1]};
+				
+				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
+				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
+				new_b = calc_if_B(cam_loc, new_co, du, dv);
+
+				{
+					bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
+					float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
+					float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
+
+					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+						float new_co_arr[3][3];
+						copy_m3_m3(new_co_arr, co_arr);
+						copy_v3_v3(new_co_arr[1], new_co);
+						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+							return true;
+						}
+					}
+				}
+				{
+					bool new_b_arr[3] = { b_arr[0], b_arr[1], new_b };
+					float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
+					float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
+
+					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+						float new_co_arr[3][3];
+						copy_m3_m3(new_co_arr, co_arr);
+						copy_v3_v3(new_co_arr[2], new_co);
+						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+							return true;
+						}
+					}
+				}
+			}
+		} else if (e2_len >= e3_len) {
+			//e2
+			float uv_1[] = {u_arr[0], v_arr[0]};
+			float uv_2[] = {u_arr[2], v_arr[2]};
+				
+			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
+			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
+			new_b = calc_if_B(cam_loc, new_co, du, dv);
+
+			{
+				bool new_b_arr[3] = { new_b, b_arr[1], b_arr[2] };
+				float new_u_arr[3] = { uv_co[0], u_arr[1], u_arr[2] };
+				float new_v_arr[3] = { uv_co[1], v_arr[1], v_arr[2] };
+
+				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					float new_co_arr[3][3];
+					copy_m3_m3(new_co_arr, co_arr);
+					copy_v3_v3(new_co_arr[0], new_co);
+					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						return true;
+					}
+				}
+			}
+			{
+				bool new_b_arr[3] = { b_arr[0], b_arr[1], new_b };
+				float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
+				float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
+
+				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					float new_co_arr[3][3];
+					copy_m3_m3(new_co_arr, co_arr);
+					copy_v3_v3(new_co_arr[2], new_co);
+					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						return true;
+					}
+				}
+			}
+		} else {
+			//e3
+			float uv_1[] = {u_arr[2], v_arr[2]};
+			float uv_2[] = {u_arr[1], v_arr[1]};
+				
+			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
+			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
+			new_b = calc_if_B(cam_loc, new_co, du, dv);
+
+			{
+				bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
+				float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
+				float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
+
+				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					float new_co_arr[3][3];
+					copy_m3_m3(new_co_arr, co_arr);
+					copy_v3_v3(new_co_arr[1], new_co);
+					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						return true;
+					}
+				}
+			}
+			{
+				bool new_b_arr[3] = { b_arr[0], b_arr[1], new_b };
+				float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
+				float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
+
+				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					float new_co_arr[3][3];
+					copy_m3_m3(new_co_arr, co_arr);
+					copy_v3_v3(new_co_arr[2], new_co);
+					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						return true;
+					}
+				}
+			}
+		}
+
+	}
+
+	return false;
+}
+
+static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffer,
+						   BLI_Buffer *cusp_edges, struct OpenSubdiv_EvaluatorDescr *eval,
+						   const float cam_loc[3]){
+	BMFace *f;
+	BMIter iter_f;
+
+	int orig_verts = BM_mesh_elem_count(bm_orig, BM_VERT);
+
+	BM_ITER_MESH (f, &iter_f, bm, BM_FACES_OF_MESH) {
+		BMVert *vert;
+		BMVert *vert_arr[3];
+		BMIter iter_v;
+		int vert_idx;
+		bool first_vert, back_face, found_face, b_arr[3];
+		first_vert = true;
+		found_face = false;
+
+		BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
+			if(first_vert){
+				first_vert = false;
+				back_face = calc_if_B_nor(cam_loc, vert->co, vert->no);
+				b_arr[vert_idx] = back_face;
+			} else if (!found_face) {
+				//If one or more of the verts do not have the same facing, then we want to look for cusps
+				bool temp = calc_if_B_nor(cam_loc, vert->co, vert->no);
+				b_arr[vert_idx] = temp;
+				if(temp != back_face){
+					found_face = true;
+				}
+			}
+			vert_arr[vert_idx] = vert;
+		}
+
+		if(!found_face){
+			continue;
+		}
+
+		//Find original mesh face + uv coords
 		{
-			float k_r1 = get_k_r(eval, face_index, v1_u, v1_v, cam_loc);
-			float k_r2 = get_k_r(eval, face_index, v2_u, v2_v, cam_loc);
-			if( (k_r1 > 0) != (k_r2 > 0) ){
-				//k_r sign crossing!
-				printf("found k_r sign crossing\n");
+            float u_arr[3]; //array for u-coords (v1_u, v2_u ...)
+			float v_arr[3];
+			float co_arr[3][3];
+			int i;
+
+			BMEdge *edge_arr[] = {NULL, NULL, NULL};
+			BMFace *orig_face = NULL;
+
+            //check if all verts are on the orignal mesh
+			for(i = 0; i < 3; i++){
+				int v_idx = BM_elem_index_get(vert_arr[i]);
+				
+				//Copy coords for later use
+				copy_v3_v3(co_arr[i], vert_arr[i]->co);
+
+				if( (v_idx + 1) > orig_verts){
+					Vert_buf v_buf = BLI_buffer_at(new_vert_buffer, Vert_buf, v_idx - orig_verts);
+					u_arr[i] = v_buf.u;
+					v_arr[i] = v_buf.v;
+					if( v_buf.orig_face ){
+						orig_face = v_buf.orig_face;
+						vert_arr[i] = NULL;
+					} else {
+						//Make sure we don't pick one of the verts that we already have
+						int idx1 = BM_elem_index_get(v_buf.orig_edge->v1); 
+						
+						if( (idx1 != BM_elem_index_get(vert_arr[ mod_i(i-1, 3) ]) ) && (idx1 != BM_elem_index_get(vert_arr[ mod_i(i+1, 3) ]) ) ){
+							vert_arr[i] = v_buf.orig_edge->v1;							
+						} else {
+							//If v1 is a duplicate then v2 has to be unique
+							vert_arr[i] = v_buf.orig_edge->v2;							
+						}
+
+						edge_arr[i] = v_buf.orig_edge;
+					}
+				} else {
+					vert_arr[i] = BM_vert_at_index_find( bm_orig, v_idx );
+				}
+			}
+            
+			if(orig_face == NULL){
+				BM_face_exists_overlap(vert_arr, 3, &orig_face);
+			}
+
+			for(i = 0; i < 3; i++){
+				if(vert_arr[i] == NULL){
+					continue;
+				}
+
+				if(edge_arr[i] != NULL){
+					//Make use we have the correct uv coords
+					convert_uv_to_new_face( edge_arr[i], orig_face, &u_arr[i], &v_arr[i]);
+				} else {
+					get_uv_coord(vert_arr[i], orig_face, &u_arr[i], &v_arr[i]);
+				}
+			}
+
+			{
+				int face_index = BM_elem_index_get(orig_face);
+				//Check for k_r sign crossings
+				float k_r1 = get_k_r(eval, face_index, u_arr[0], v_arr[0], cam_loc);
+				float k_r2 = get_k_r(eval, face_index, u_arr[1], v_arr[1], cam_loc);
+				bool k_r_crossing = false;
+				if( (k_r1 > 0) != (k_r2 > 0) ){
+					//k_r sign crossing!
+					printf("found k_r sign crossing\n");
+					k_r_crossing = true;
+				} else {
+					//check last vert
+					float k_r3 = get_k_r(eval, face_index, u_arr[2], v_arr[2], cam_loc);
+					if( (k_r1 > 0) != (k_r3 > 0) ){
+						printf("found k_r sign crossing\n");
+						k_r_crossing = true;
+					}
+				}
+
+				if(k_r_crossing){
+					float cusp_co[3];
+					//Start looking for the cusp in the triangle
+					if(cusp_triangle(eval, cam_loc, co_arr, b_arr, u_arr, v_arr, face_index, cusp_co)){
+						//We found a cusp!
+						printf("Found a cusp point!\n");
+						//insert cusp edge
+
+					}
+				}
 			}
 		}
 	}                                                     
@@ -820,7 +1135,9 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 
 		// (6.2) Contour Insertion
 
-        cusp_detection(bm_orig, osd_eval, cam_loc);
+        //TODO implement vertex shift (as an alternative to edge split)
+
+        cusp_detection(bm, bm_orig, &new_vert_buffer, NULL, osd_eval, cam_loc);
 
 		//contour_insertion(bm, bm_orig, &new_vert_buffer, NULL, osd_eval, cam_loc);
 
