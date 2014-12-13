@@ -224,13 +224,15 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 	BMEdge *e;
 	BMFace *f;
 	BMVert *v1, *v2;
-	float v1_u, v1_v, v2_u, v2_v, step;
+	float v1_u, v1_v, v2_u, v2_v;
 	bool is_B;
 	int orig_edges = BM_mesh_elem_count(bm_orig, BM_EDGE);
     int initial_edges = BM_mesh_elem_count(bm, BM_EDGE);
 
 	//Do 10 samples but don't check end and start point
-	step = 1.0f/12.0f;
+	float step = 1.0f/11.0f;
+	float step_arr[] = { step*5.0f, step*6.0f, step*4.0f, step*7.0f, step*3.0f,
+						   step*8.0f, step*2.0f, step*9.0f, step*1.0f, step*10.0f };
 
 	BM_ITER_MESH_INDEX (e, &iter_e, bm, BM_EDGES_OF_MESH, i) {
         Vert_buf v_buf;
@@ -318,9 +320,9 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 
 			if( v1_u == v2_u ){
 				u = v1_u;
-				v = step;
 
 				for(i=0; i < 10; i++){
+					v = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
 						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
@@ -329,13 +331,12 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
 						break;
 					}
-					v += step;
 				}
 			} else if ( v1_v == v2_v ){
-				u = step;
 				v = v1_v;
 
 				for(i=0; i < 10; i++){
+					u = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
 						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
@@ -344,19 +345,22 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
 						break;
 					}
-					u += step;
 				}
 			} else {
-				float step_u;
+				bool alt_diag;
 				if((v1_u == 0 && v1_v == 0) || (v2_u == 0 && v2_v == 0)){
-					step_u = step;
-					u = v = step;
+					alt_diag = false;
 				} else {
-					step_u = -step;
-					u = 1.0f - step;
-					v = step;
+					alt_diag = true;
 				}
 				for(i=0; i < 10; i++){
+                    if(alt_diag){
+                        u = 1.0f - step_arr[i];
+					} else {
+						u = step_arr[i];
+					}
+
+					v = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
 						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
@@ -365,8 +369,6 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
 						break;
 					}
-					u += step_u;
-					v += step;
 				}
 			}
 		}
@@ -564,6 +566,7 @@ static void bisect_search(const float v1_uv[2], const float v2_uv[2], struct Ope
 	
 	if( len_v3v3(P, e->v1->co) < 1e-3 || len_v3v3(P, e->v2->co) < 1e-3 ){
 		//Do not insert a new vert here
+		//TODO shift vert
 		return;
 	}
 
@@ -591,12 +594,19 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 			break;
 		}
 
-        //Check if this is a cusp edge
-		for(cusp_i = 0; cusp_i < cusp_edges->count; cusp_i++){
-			Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
-			if(cusp.cusp_e == e){
-				//Do not split this edge yet
-				printf("skipped cusp edge\n");
+		{
+			bool cont = false;
+			//Check if this is a cusp edge
+			for(cusp_i = 0; cusp_i < cusp_edges->count; cusp_i++){
+				Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
+				if(cusp.cusp_e == e){
+					//Do not split this edge yet
+					printf("skipped cusp edge\n");
+					cont = true;
+					break;
+				}
+			}
+			if( cont ){
 				continue;
 			}
 		}
@@ -1162,7 +1172,35 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 								openSubdiv_evaluateLimit(eval, face_index, edge_uv[0], edge_uv[1], P, du, dv);
 
 								if( len_v3v3(P, edge->v1->co) < 1e-3 || len_v3v3(P, edge->v2->co) < 1e-3 ){
-									//Do not insert a new vert here
+									//Check if we should use the original edge (no new verts)
+									BMVert *orig_v;
+									BMEdge *orig_edge;
+									Cusp cusp;
+
+									if( len_v3v3(P, edge->v1->co) < 1e-3 ){
+										orig_v = edge->v1;
+									} else {
+										orig_v = edge->v2;
+									}
+
+									BM_ITER_ELEM (orig_edge, &iter_e, f, BM_EDGES_OF_FACE) {
+										if( equals_v3v3(orig_edge->v1->co, orig_v->co) && equals_v3v3(orig_edge->v2->co, c) ){
+											//Found edge
+											break;
+										}
+										if( equals_v3v3(orig_edge->v1->co, c) && equals_v3v3(orig_edge->v2->co, orig_v->co) ){
+											//Found edge
+											break;
+										}
+									}
+
+									cusp.cusp_e = orig_edge;
+									copy_v3_v3(cusp.cusp_co, cusp_co);
+									BLI_buffer_append(cusp_edges, Cusp, cusp);
+
+									//TODO shift vert
+
+									printf("Used orig edge for cusp!\n");
 									continue;
 								}
 
@@ -1239,6 +1277,7 @@ static void cusp_insertion(BMesh *bm, BLI_Buffer *cusp_edges){
 		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-2 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-2 ){
 			//Do not insert a new vert here
 			//TODO check if cusp detection is working as it's supposed to...
+			//TODO shift vert
 			printf("skipped cups insert\n");
 			continue;
 		}
