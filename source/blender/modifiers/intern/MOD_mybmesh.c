@@ -1238,6 +1238,7 @@ static void cusp_insertion(BMesh *bm, BLI_Buffer *cusp_edges){
 		Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
 		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-2 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-2 ){
 			//Do not insert a new vert here
+			//TODO check if cusp detection is working as it's supposed to...
 			printf("skipped cups insert\n");
 			continue;
 		}
@@ -1317,7 +1318,9 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 	// (6.1) Initialization
     verts_to_limit(bm, osd_eval);
 
-	BM_mesh_triangulate(bm, MOD_TRIANGULATE_QUAD_FIXED, MOD_TRIANGULATE_NGON_BEAUTY, false, NULL, NULL);
+	if (mmd->flag & MOD_MYBMESH_TRIANG) {
+		BM_mesh_triangulate(bm, MOD_TRIANGULATE_QUAD_FIXED, MOD_TRIANGULATE_NGON_BEAUTY, false, NULL, NULL);
+	}
 
 	if( mmd->camera_ob == NULL){
 		//Can't proceed without camera obj
@@ -1331,18 +1334,23 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		BLI_buffer_declare_static(Vert_buf, new_vert_buffer, BLI_BUFFER_NOP, 32);
 		BLI_buffer_declare_static(Cusp, cusp_edges, BLI_BUFFER_NOP, 32);
 
-		split_BB_FF_edges(bm, bm_orig, osd_eval, cam_loc, &new_vert_buffer);
-
+		if (mmd->flag & MOD_MYBMESH_FF_SPLIT) {
+			split_BB_FF_edges(bm, bm_orig, osd_eval, cam_loc, &new_vert_buffer);
+		}
 		// (6.2) Contour Insertion
 
-        //TODO implement vertex shift (as an alternative to edge split)
+		//TODO implement vertex shift (as an alternative to edge split)
 
-        cusp_detection(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
+		if (mmd->flag & MOD_MYBMESH_CUSP_D) {
+			cusp_detection(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
+		}
 
-		contour_insertion(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
-
-        cusp_insertion(bm, &cusp_edges);
-
+		if (mmd->flag & MOD_MYBMESH_FB_SPLIT) {
+			contour_insertion(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
+		}
+		if (mmd->flag & MOD_MYBMESH_CUSP_I) {
+			cusp_insertion(bm, &cusp_edges);
+		}
 		debug_colorize(bm, cam_loc);
 		BLI_buffer_free(&new_vert_buffer);
 		BLI_buffer_free(&cusp_edges);

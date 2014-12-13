@@ -1375,7 +1375,13 @@ typedef struct MyBMeshModifierData {
 } MyBMeshModifierData;
 
 enum {
-	MOD_MYBMESH_INVERT_VGROUP = (1 << 0),
+	MOD_MYBMESH_TRIANG = (1 << 0),
+	MOD_MYBMESH_FF_SPLIT = (1 << 1),
+	MOD_MYBMESH_CUSP_D = (1 << 2),
+	MOD_MYBMESH_CUSP_I = (1 << 3),
+	MOD_MYBMESH_FB_SPLIT = (1 << 4),
+	MOD_MYBMESH_RAD_I = (1 << 5),
+	MOD_MYBMESH_RAD_FLIP = (1 << 6),
 };
 
 #endif  /* __DNA_MODIFIER_TYPES_H__ */
