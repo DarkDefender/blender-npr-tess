@@ -1037,8 +1037,12 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 					} else {
 						//Make sure we don't pick one of the verts that we already have
 						int idx1 = BM_elem_index_get(v_buf.orig_edge->v1); 
-						
-						if( (idx1 != BM_elem_index_get(vert_arr[ mod_i(i-1, 3) ]) ) && (idx1 != BM_elem_index_get(vert_arr[ mod_i(i+1, 3) ]) ) ){
+						BMVert *temp_v1 = vert_arr[ mod_i(i-1, 3) ];
+						BMVert *temp_v2 = vert_arr[ mod_i(i+1, 3) ];
+
+						if( ( temp_v1 != NULL && idx1 != BM_elem_index_get(temp_v1) ) &&
+						   	( temp_v2 != NULL && idx1 != BM_elem_index_get(temp_v2) ) )
+						{
 							vert_arr[i] = v_buf.orig_edge->v1;							
 						} else {
 							//If v1 is a duplicate then v2 has to be unique
@@ -1128,6 +1132,7 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 							uv_1[1] = v_arr[1];
 							uv_2[1] = v_arr[2];
 						}
+
 						sub_v3_v3v3(d, c, cusp_co);
 						cross_v3_v3v3(no, f->no, d);
 						
@@ -1152,6 +1157,18 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 									break;
 								}
 							}
+
+							//Check if point is really close to the FF/BB edge
+							if( dist_to_line_segment_v3(cusp_co, a, b) < 1e-3){
+								//Use this as a cusp edge
+								Cusp cusp;
+								cusp.cusp_e = edge;
+								copy_v3_v3(cusp.cusp_co, cusp_co);
+								BLI_buffer_append(cusp_edges, Cusp, cusp);
+								printf("--->Found close cusp!\n");
+								continue;
+							}
+
 							printf("t: %f\n", t);
 
 							if(t > 1){
@@ -1274,10 +1291,10 @@ static void cusp_insertion(BMesh *bm, BLI_Buffer *cusp_edges){
 
 	for(cusp_i = 0; cusp_i < cusp_edges->count; cusp_i++){
 		Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
-		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-2 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-2 ){
+		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-3 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-3 ){
 			//Do not insert a new vert here
 			//TODO check if cusp detection is working as it's supposed to...
-			//TODO shift vert
+			//TODO this should never happen. ALWAYS insert detected cusps
 			printf("skipped cups insert\n");
 			continue;
 		}
