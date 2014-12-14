@@ -154,7 +154,7 @@ static float get_facing_dir_nor(const float cam_loc[3], const float P[3], const 
 }
 
 static void split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new_pos[3],
-									const float du[3], const float dv[3], const float u, const float v){
+									const float du[3], const float dv[3]){
 	//Split edge one time and move the created vert to new_pos
 	
     BMVert *vert;
@@ -173,7 +173,6 @@ static void split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new_po
 	cross_v3_v3v3(vert->no, dv, du);
 	normalize_v3(vert->no);
 
-	//TODO save what face the new vert belonged to. Also u,v coords
 }
 
 
@@ -325,7 +324,7 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 					v = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
-						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
+						split_edge_and_move_vert(bm, e, P, du, dv);
 						v_buf.u = u;
 						v_buf.v = v;
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
@@ -339,7 +338,7 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 					u = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
-						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
+						split_edge_and_move_vert(bm, e, P, du, dv);
 						v_buf.u = u;
 						v_buf.v = v;
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
@@ -363,7 +362,7 @@ static void split_BB_FF_edges(BMesh *bm, BMesh *bm_orig, struct OpenSubdiv_Evalu
 					v = step_arr[i];
 					openSubdiv_evaluateLimit(eval, face_index, u, v, P, du, dv);
 					if( calc_if_B(cam_loc, P, du, dv) != is_B ){
-						split_edge_and_move_vert(bm, e, P, du, dv, u, v);
+						split_edge_and_move_vert(bm, e, P, du, dv);
 						v_buf.u = u;
 						v_buf.v = v;
 						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
@@ -538,8 +537,8 @@ static void convert_uv_to_new_face(BMEdge *e, BMFace *f, float *u, float *v){
 	
 }
 
-static void bisect_search(const float v1_uv[2], const float v2_uv[2], struct OpenSubdiv_EvaluatorDescr *eval,
-						BMesh *bm, BMEdge *e, int face_index, const float cam_loc[3]){
+static bool bisect_search(const float v1_uv[2], const float v2_uv[2], struct OpenSubdiv_EvaluatorDescr *eval,
+						BMesh *bm, BMEdge *e, int face_index, const float cam_loc[3], float uv_result[2]){
 	//Search edge for sign crossing and split it!
 	int i;
 	float face_dir, uv_P[2], P[3], du[3], dv[3];
@@ -567,23 +566,186 @@ static void bisect_search(const float v1_uv[2], const float v2_uv[2], struct Ope
 	if( len_v3v3(P, e->v1->co) < 1e-3 || len_v3v3(P, e->v2->co) < 1e-3 ){
 		//Do not insert a new vert here
 		//TODO shift vert
-		return;
+		return false;
+	}
+    
+	copy_v2_v2(uv_result, uv_P);
+
+	split_edge_and_move_vert(bm, e, P, du, dv);
+	return true;
+}
+
+static void search_edge(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffer,
+							  const int i, BMEdge *e, struct OpenSubdiv_EvaluatorDescr *eval,
+							  const float cam_loc[3]){
+
+	float v1_u, v1_v, v2_u, v2_v;
+	int face_index;
+	int orig_verts = BM_mesh_elem_count(bm_orig, BM_VERT);
+	int orig_edges = BM_mesh_elem_count(bm_orig, BM_EDGE);
+	int v1_idx = BM_elem_index_get(e->v1); 
+	int v2_idx = BM_elem_index_get(e->v2);
+	Vert_buf v_buf1, v_buf2;
+	BMFace *f;
+	BMEdge *orig_e = NULL;
+	BMVert *v1 = NULL, *v2 = NULL;
+	bool v1_has_face = false, v2_has_face = false;
+
+	if( (v1_idx + 1) > orig_verts){
+		printf("num1: %d\n", v1_idx - orig_verts);
+		v_buf1 = BLI_buffer_at(new_vert_buffer, Vert_buf, v1_idx - orig_verts);
+		v1_u = v_buf1.u;
+		v1_v = v_buf1.v;
+		if( v_buf1.orig_face ){
+			v1_has_face = true;
+		}
+	} else {
+		v1 = BM_vert_at_index_find( bm_orig, v1_idx ); 
+	}
+	if( (v2_idx + 1) > orig_verts){
+		printf("num2: %d\n", v2_idx - orig_verts);
+		v_buf2 = BLI_buffer_at(new_vert_buffer, Vert_buf, v2_idx - orig_verts);
+		v2_u = v_buf2.u;
+		v2_v = v_buf2.v;
+		if( v_buf2.orig_face ){
+			v2_has_face = true;
+		}
+	} else {
+		v2 = BM_vert_at_index_find( bm_orig, v2_idx ); 
 	}
 
-	split_edge_and_move_vert(bm, e, P, du, dv, uv_P[0], uv_P[1]);
+	if( v1 && v2 ){
+		printf("v1 & v2\n");
+
+		if( i < orig_edges ){ 
+			//this edge is on the original mesh
+			BMIter iter_f;
+
+			//TODO why do I have to use find? Segfault otherwise...
+			//remember to replace the rest of "at_index"
+			//why is table_ensure not fixing the assert?
+			orig_e = BM_edge_at_index_find(bm_orig, i);
+
+			//Get face connected to edge from orig mesh
+			//TODO is it wise to use BM_ITER_ELEM here?
+			BM_ITER_ELEM (f, &iter_f, orig_e, BM_FACES_OF_EDGE) {
+				//Get first face
+				break;
+			}
+		} else {
+			BMVert *vert_arr[] = {v1 ,v2};
+			BM_face_exists_overlap(vert_arr, 2, &f);
+		}
+		get_uv_coord(v1, f, &v1_u, &v1_v);
+		get_uv_coord(v2, f, &v2_u, &v2_v);
+	} else if ( v1 ){
+		printf("v1\n");
+		if( v2_has_face ){
+			printf("face\n");
+			f = v_buf2.orig_face; 
+		} else {
+			BMVert *vert_arr[3];
+
+			vert_arr[0] = v_buf2.orig_edge->v1;
+			vert_arr[1] = v_buf2.orig_edge->v2;
+			vert_arr[2] = v1;
+			//TODO check if get face fails
+			if( v_buf2.orig_edge->v1 == v2 || v_buf2.orig_edge->v2 == v2 ){
+				printf("Same vert!\n");
+				BM_face_exists_overlap(vert_arr, 2, &f);
+			} else {
+				BM_face_exists_overlap(vert_arr, 3, &f);
+			}
+			convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
+		}
+		get_uv_coord(v1, f, &v1_u, &v1_v);
+	} else if ( v2 ){
+		printf("v2\n");
+		if( v1_has_face ){
+			printf("face\n");
+			f = v_buf1.orig_face; 
+		} else {
+			BMVert *vert_arr[3];
+
+			vert_arr[0] = v_buf1.orig_edge->v1;
+			vert_arr[1] = v_buf1.orig_edge->v2;
+			vert_arr[2] = v2;
+			//TODO check if get face fails
+			if( v_buf1.orig_edge->v1 == v2 || v_buf1.orig_edge->v2 == v2 ){
+				printf("Same vert!\n");
+				BM_face_exists_overlap(vert_arr, 2, &f);
+			} else {
+				BM_face_exists_overlap(vert_arr, 3, &f);
+			}
+			convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
+		}
+		get_uv_coord(v2, f, &v2_u, &v2_v);
+	} else {
+		printf("Two verts on the same orig face\n");
+		if( v1_has_face || v2_has_face ){
+			if( v1_has_face && v2_has_face ){
+				printf("face 1 & 2\n");
+				f = v_buf1.orig_face; 
+			} else if ( v1_has_face ) {
+				printf("face1\n");
+				f = v_buf1.orig_face; 
+				convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
+			} else {
+				printf("face2\n");
+				f = v_buf2.orig_face; 
+				convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v2_v);
+			}
+		} else {
+			//No orig face. So this in on a orig edge. So just get the face from the v1 edge
+			BMVert *vert_arr[] = {v_buf1.orig_edge->v1 ,v_buf1.orig_edge->v2};
+			BM_face_exists_overlap(vert_arr, 2, &f);
+			convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
+			convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
+		}
+	}
+	face_index = BM_elem_index_get(f);
+
+	{
+		Vert_buf new_buf;
+		float uv_result[2];
+		float v1_uv[2] = { v1_u, v1_v };
+		float v2_uv[2] = { v2_u, v2_v };
+
+		if(  (v1_u == 0 && v2_u == 0) || (v1_u == 1 && v2_u == 1) ||
+				(v1_v == 0 && v2_v == 0) || (v1_v == 1 && v2_v == 1) )
+		{
+			//Along an original edge
+			new_buf.orig_face = NULL;
+			if( v1 && v2 ){
+				new_buf.orig_edge = orig_e;
+			} else if ( v1 ){
+				new_buf.orig_edge = v_buf1.orig_edge; 
+			} else {
+				new_buf.orig_edge = v_buf2.orig_edge; 
+			}
+
+		} else {
+			new_buf.orig_face = f;
+			new_buf.orig_edge = NULL;
+		}
+
+		printf("hej\n");
+		if( bisect_search( v1_uv, v2_uv, eval, bm, e, face_index, cam_loc, uv_result) ){
+			//if a new vert is inserted add it to the buffer
+			new_buf.u = uv_result[0];
+			new_buf.v = uv_result[1];
+			BLI_buffer_append(new_vert_buffer, Vert_buf, new_buf);
+		}
+	}
 }
 
 static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffer,
 							  BLI_Buffer *cusp_edges, struct OpenSubdiv_EvaluatorDescr *eval,
 							  const float cam_loc[3]){
-    int i, cusp_i, face_index;
+    int i, cusp_i;
 	BMEdge *e;
-	BMFace *f;
 	BMIter iter_e;
-	float v1_u, v1_v, v2_u, v2_v;
 
-	int orig_verts = BM_mesh_elem_count(bm_orig, BM_VERT);
-	int orig_edges = BM_mesh_elem_count(bm_orig, BM_EDGE);
     int initial_edges = BM_mesh_elem_count(bm, BM_EDGE);
 
     printf("Buffer count: %d\n", new_vert_buffer->count);
@@ -617,136 +779,7 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 			continue;
 		}
 
-		{
-			int v1_idx = BM_elem_index_get(e->v1); 
-			int v2_idx = BM_elem_index_get(e->v2);
-			Vert_buf v_buf1, v_buf2;
-			BMVert *v1 = NULL, *v2 = NULL;
-			bool v1_has_face = false, v2_has_face = false;
-
-			if( (v1_idx + 1) > orig_verts){
-				printf("num1: %d\n", v1_idx - orig_verts);
-				v_buf1 = BLI_buffer_at(new_vert_buffer, Vert_buf, v1_idx - orig_verts);
-				v1_u = v_buf1.u;
-				v1_v = v_buf1.v;
-				if( v_buf1.orig_face ){
-					v1_has_face = true;
-				}
-			} else {
-				v1 = BM_vert_at_index_find( bm_orig, v1_idx ); 
-			}
-			if( (v2_idx + 1) > orig_verts){
-				printf("num2: %d\n", v2_idx - orig_verts);
-				v_buf2 = BLI_buffer_at(new_vert_buffer, Vert_buf, v2_idx - orig_verts);
-				v2_u = v_buf2.u;
-				v2_v = v_buf2.v;
-				if( v_buf2.orig_face ){
-					v2_has_face = true;
-				}
-			} else {
-				v2 = BM_vert_at_index_find( bm_orig, v2_idx ); 
-			}
-
-			if( v1 && v2 ){
-				printf("v1 & v2\n");
-				//TODO make this a external function
-				if( i < orig_edges ){ 
-				//this edge is on the original mesh
-                BMIter iter_f;
-
-				//TODO why do I have to use find? Segfault otherwise...
-				//remember to replace the rest of "at_index"
-				//why is table_ensure not fixing the assert?
-				BMEdge *orig_e = BM_edge_at_index_find(bm_orig, i);
-
-				//Get face connected to edge from orig mesh
-				//TODO is it wise to use BM_ITER_ELEM here?
-				BM_ITER_ELEM (f, &iter_f, orig_e, BM_FACES_OF_EDGE) {
-					//Get first face
-					break;
-				}
-				} else {
-					BMVert *vert_arr[] = {v1 ,v2};
-					BM_face_exists_overlap(vert_arr, 2, &f);
-				}
-				get_uv_coord(v1, f, &v1_u, &v1_v);
-				get_uv_coord(v2, f, &v2_u, &v2_v);
-			} else if ( v1 ){
-				printf("v1\n");
-				if( v2_has_face ){
-					printf("face\n");
-					f = v_buf2.orig_face; 
-				} else {
-					BMVert *vert_arr[3];
-
-					vert_arr[0] = v_buf2.orig_edge->v1;
-					vert_arr[1] = v_buf2.orig_edge->v2;
-                    vert_arr[2] = v1;
-                    //TODO check if get face fails
-					if( v_buf2.orig_edge->v1 == v2 || v_buf2.orig_edge->v2 == v2 ){
-						printf("Same vert!\n");
-						BM_face_exists_overlap(vert_arr, 2, &f);
-					} else {
-						BM_face_exists_overlap(vert_arr, 3, &f);
-					}
-					convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
-				}
-				get_uv_coord(v1, f, &v1_u, &v1_v);
-			} else if ( v2 ){
-				printf("v2\n");
-				if( v1_has_face ){
-					printf("face\n");
-					f = v_buf1.orig_face; 
-				} else {
-					BMVert *vert_arr[3];
-
-					vert_arr[0] = v_buf1.orig_edge->v1;
-					vert_arr[1] = v_buf1.orig_edge->v2;
-                    vert_arr[2] = v2;
-                    //TODO check if get face fails
-					if( v_buf1.orig_edge->v1 == v2 || v_buf1.orig_edge->v2 == v2 ){
-						printf("Same vert!\n");
-						BM_face_exists_overlap(vert_arr, 2, &f);
-					} else {
-						BM_face_exists_overlap(vert_arr, 3, &f);
-					}
-					convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
-				}
-				get_uv_coord(v2, f, &v2_u, &v2_v);
-			} else {
-                printf("Two verts on the same orig face\n");
-				if( v1_has_face || v2_has_face ){
-					if( v1_has_face && v2_has_face ){
-						printf("face 1 & 2\n");
-						f = v_buf1.orig_face; 
-					} else if ( v1_has_face ) {
-						printf("face1\n");
-						f = v_buf1.orig_face; 
-						convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
-					} else {
-						printf("face2\n");
-						f = v_buf2.orig_face; 
-						convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v2_v);
-					}
-				} else {
-					//No orig face. So this in on a orig edge. So just get the face from the v1 edge
-					BMVert *vert_arr[] = {v_buf1.orig_edge->v1 ,v_buf1.orig_edge->v2};
-					BM_face_exists_overlap(vert_arr, 2, &f);
-					convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v1_v);
-					convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
-				}
-			}
-			face_index = BM_elem_index_get(f);
-		}
-
-		{
-			float v1_uv[2] = { v1_u, v1_v };
-			float v2_uv[2] = { v2_u, v2_v };
-
-			printf("hej\n");
-            bisect_search( v1_uv, v2_uv, eval, bm, e, face_index, cam_loc); 
-		}
-
+		search_edge(bm, bm_orig, new_vert_buffer, i, e, eval, cam_loc );
 	}
 }
 
@@ -1251,7 +1284,7 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 									int cur_edge = BM_mesh_elem_count(bm, BM_EDGE);
                                     BMEdge *cusp_e = NULL;
 
-									split_edge_and_move_vert(bm, edge, P, du, dv, edge_uv[0], edge_uv[1]);
+									split_edge_and_move_vert(bm, edge, P, du, dv);
 
                                     //Get the cusp edge
 									for(j = 0; j < 3; j++){
@@ -1286,11 +1319,14 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 	}                                                     
 }
 
-static void cusp_insertion(BMesh *bm, BLI_Buffer *cusp_edges){
+static void cusp_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffer,
+						   BLI_Buffer *cusp_edges, struct OpenSubdiv_EvaluatorDescr *eval,
+						   const float cam_loc[3]){
 	int cusp_i;
 
 	for(cusp_i = 0; cusp_i < cusp_edges->count; cusp_i++){
 		Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
+		/*
 		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-3 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-3 ){
 			//Do not insert a new vert here
 			//TODO check if cusp detection is working as it's supposed to...
@@ -1299,6 +1335,10 @@ static void cusp_insertion(BMesh *bm, BLI_Buffer *cusp_edges){
 			continue;
 		}
 		split_edge_and_move_cusp(bm, cusp.cusp_e, cusp.cusp_co);
+		*/
+        int i = BM_elem_index_get(cusp.cusp_e);
+		search_edge(bm, bm_orig, new_vert_buffer, i, cusp.cusp_e, eval, cam_loc);
+
 	}
 }
 
@@ -1405,7 +1445,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 			contour_insertion(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
 		}
 		if (mmd->flag & MOD_MYBMESH_CUSP_I) {
-			cusp_insertion(bm, &cusp_edges);
+			cusp_insertion(bm, bm_orig, &new_vert_buffer, &cusp_edges, osd_eval, cam_loc);
 		}
 		debug_colorize(bm, cam_loc);
 		BLI_buffer_free(&new_vert_buffer);
