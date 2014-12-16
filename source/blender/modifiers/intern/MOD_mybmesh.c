@@ -1662,13 +1662,16 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 					// This is a face we already worked on
 					skip_face = true;
 				}
+
 				for(vert_j = 0; vert_j < CC_verts->count; vert_j++){
 					BMVert *vert2 = BLI_buffer_at(CC_verts, BMVert*, vert_j);
 
 					if( cur_vert == vert){
 						CC_idx = vert_idx;
+						break;
 					} else if ( cur_vert == vert2 ){
 						CC2_idx = vert_idx;
+						break;
 					}
 				}
 				vert_arr[vert_idx] = cur_vert;
@@ -1776,7 +1779,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 					sub_v3_v3v3(temp, P, co_arr[CC_idx]);
 					search_val = dot_v3v3(rad_plane_no, temp);
 					//Did we get lucky?
-					if( search_val < 1e-14 ){
+					if( fabs(search_val) < 1e-14 ){
                         //Insert new vertex
 						Vert_buf v_buf;
 						v_buf.orig_edge = NULL;
@@ -1786,6 +1789,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 						if( poke_and_move(bm, f, P, du, dv) ){
 							BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
 						}
+						printf("got lucky\n");
                         continue;
 					}
 
@@ -1802,8 +1806,9 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
 								search_val = dot_v3v3(rad_plane_no, temp);
 
-								if( search_val < 1e-14 ){
+								if( fabs(search_val) < 1e-14 ){
 									//We got lucky and found the zero crossing!
+									printf("got lucky\n");
 									break;
 								}
 
@@ -1833,8 +1838,9 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
 								search_val = dot_v3v3(rad_plane_no, temp);
 
-								if( search_val < 1e-14 ){
+								if( fabs(search_val) < 1e-14 ){
 									//We got lucky and found the zero crossing!
+									printf("got lucky\n");
 									break;
 								}
 
