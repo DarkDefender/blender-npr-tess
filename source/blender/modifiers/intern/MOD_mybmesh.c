@@ -1648,15 +1648,24 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 		int CC2_idx;
 		float co_arr[3][3];
 		BMVert *vert_arr[3];
-		BMVert *vert;
 		BMIter iter_v;
 
-		vert = BLI_buffer_at(CC_verts, BMVert*, vert_i);
+		BMVert *vert = BLI_buffer_at(CC_verts, BMVert*, vert_i);
+        
+		int face_i;
+		int face_count = BM_vert_face_count(vert);
+		BMEdge *face_arr[face_count];
 
-		BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+		BM_ITER_ELEM_INDEX (f, &iter_f, vert, BM_FACES_OF_VERT, face_i) {
+			face_arr[face_i] = f;
+		}
+
+		for( face_i = 0; face_i < face_count; face_i++){
 			BMVert *cur_vert;
             CC2_idx = -1;
 			bool skip_face = false;
+
+			f = face_arr[face_i];
 
 			BM_ITER_ELEM_INDEX (cur_vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
 				if( BM_elem_index_get(cur_vert) > (initial_verts - 1) ){
