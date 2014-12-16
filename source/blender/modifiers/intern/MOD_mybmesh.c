@@ -1665,7 +1665,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 				for(vert_j = 0; vert_j < CC_verts->count; vert_j++){
 					BMVert *vert2 = BLI_buffer_at(CC_verts, BMVert*, vert_j);
 
-					if(vert_i == vert_j){
+					if( cur_vert == vert){
 						CC_idx = vert_idx;
 					} else if ( cur_vert == vert2 ){
 						CC2_idx = vert_idx;
@@ -1711,7 +1711,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 
 				//get uv coord and orig face
 			    orig_face = get_orig_face(bm_orig, orig_verts, vert_arr, u_arr, v_arr, co_arr, new_vert_buffer);
-				if( CC2_idx != -1 && false ){
+				if( CC2_idx != -1 ){
 					//Do the radial planes intersect?
 					float rad_plane_no2[3];
 					float val2_1, val2_2;
@@ -1864,6 +1864,14 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 	}
 }
 
+static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_verts){
+
+	int vert_i;
+	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
+		
+	}
+}
+
 static struct OpenSubdiv_EvaluatorDescr *create_osd_eval(BMesh *bm){
 	//TODO create FAR meshes instead. (Perhaps the code in contour subdiv can help?)
 	int subdiv_levels = 1;
@@ -1950,6 +1958,8 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		return result;
 	}
 	{
+        int radi_vert_start_idx;
+
 		BLI_buffer_declare_static(Vert_buf, new_vert_buffer, BLI_BUFFER_NOP, 32);
 		BLI_buffer_declare_static(Cusp, cusp_edges, BLI_BUFFER_NOP, 32);
 		BLI_buffer_declare_static(BMVert*, CC_verts, BLI_BUFFER_NOP, 32);
@@ -1973,6 +1983,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		}
 
 		// (6.3) Radialization
+		radi_vert_start_idx = BM_mesh_elem_count(bm, BM_VERT);
 
 		if (mmd->flag & MOD_MYBMESH_RAD_I){
 			radial_insertion(bm, bm_orig, &new_vert_buffer, osd_eval, cam_loc, &CC_verts);
