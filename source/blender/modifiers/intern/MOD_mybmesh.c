@@ -1601,7 +1601,8 @@ static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const fl
     bool rot_edge = false;
 
 	BM_ITER_ELEM (edge, &iter_e, f, BM_EDGES_OF_FACE){
-		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < 1e-3){
+		//TODO check for folds not distance
+		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < len_v3v3(edge->v1->co, edge->v2->co) * 0.1f){
 			rot_edge = true;
 			break;
 		}
@@ -1874,7 +1875,93 @@ static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_vert
 
 	int vert_i;
 	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
-		
+		BMEdge *e;
+		BMIter iter_e;
+		int edge_idx;
+		int edge_i;
+		BMVert *vert = BLI_buffer_at(CC_verts, BMVert*, vert_i);
+		int edge_count = BM_vert_edge_count(vert);
+		BMEdge *edge_arr[edge_count];
+
+		BM_ITER_ELEM_INDEX (e, &iter_e, vert, BM_EDGES_OF_VERT, edge_idx) {
+			edge_arr[edge_idx] = e;
+		}
+
+		for( edge_i = 0; edge_i < edge_count; edge_i++){
+			BMVert *edge_vert;
+			e = edge_arr[edge_i];
+
+			if(e->v1 != vert){
+				edge_vert = e->v1;
+			} else {
+				edge_vert = e->v2;
+			}
+			
+			if( !(BM_elem_index_get(edge_vert) < radi_start_idx) ){
+                //This is a radial/CC edge vert, do not try to flip it.
+				continue;
+			}
+			{
+				int vert_j;
+				bool CC_vert = false;
+				for(vert_j = 0; vert_j < CC_verts->count; vert_j++){
+					BMVert *cc_vert = BLI_buffer_at(CC_verts, BMVert*, vert_j);
+                    if( cc_vert == edge_vert ){
+						CC_vert = true;
+						break;
+					}
+				}
+				if( CC_vert ){
+					//This is a CC edge vert, do not try to flip it.
+					continue;
+				}
+			}
+            //See if it's possible to rotate the edge at all
+            if( !BM_edge_rotate_check(e) ){
+				//Not possible, bail
+				printf("Couldn't rotate edge!\n");
+				continue;
+			}
+
+			{
+				//Check if we can just do a simple rotation that doesn't create any bad faces
+				BMLoop *l1, *l2;
+                BM_edge_calc_rotate(e, true, &l1, &l2);
+                
+				//Returns true if not degenerate
+				if( BM_edge_rotate_check_degenerate(e, l1, l2) ){
+					//We can simply rotate it!
+					BM_edge_rotate(bm, e, true, 0);
+					continue;
+				}
+
+				printf("dissolve vert!\n");
+
+				//Can't simply rotate it. Dissolve the vert and triangulate the resulting vert
+				BM_mesh_elem_hflag_disable_all(bm, BM_VERT, BM_ELEM_TAG, false);
+				BM_elem_flag_enable(edge_vert, BM_ELEM_TAG);
+				BMO_op_callf(bm, BMO_FLAG_DEFAULTS, "dissolve_verts verts=%hv", BM_ELEM_TAG);
+				
+				//Get the new face
+				{
+					BMIter iter_f;
+					BMFace *f;
+
+					BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+						if( f->len > 3 ){
+                          //We found our face
+						  break;
+						}
+					}
+
+					BM_mesh_elem_hflag_disable_all(bm, BM_FACE, BM_ELEM_TAG, false);
+					BM_elem_flag_enable(f, BM_ELEM_TAG);
+					BMO_op_callf(bm, BMO_FLAG_DEFAULTS, "triangulate faces=%hf", BM_ELEM_TAG);
+				}
+
+			}
+
+		}
 	}
 }
 
@@ -1964,8 +2051,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		return result;
 	}
 	{
-        int radi_vert_start_idx;
-
+		int radi_vert_start_idx;
 		BLI_buffer_declare_static(Vert_buf, new_vert_buffer, BLI_BUFFER_NOP, 32);
 		BLI_buffer_declare_static(Cusp, cusp_edges, BLI_BUFFER_NOP, 32);
 		BLI_buffer_declare_static(BMVert*, CC_verts, BLI_BUFFER_NOP, 32);
@@ -1989,14 +2075,15 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		}
 
 		// (6.3) Radialization
-		radi_vert_start_idx = BM_mesh_elem_count(bm, BM_VERT);
+
+        radi_vert_start_idx = BM_mesh_elem_count(bm, BM_VERT);
 
 		if (mmd->flag & MOD_MYBMESH_RAD_I){
 			radial_insertion(bm, bm_orig, &new_vert_buffer, osd_eval, cam_loc, &CC_verts);
 		}
 
 		if (mmd->flag & MOD_MYBMESH_RAD_FLIP){
-
+			radial_flip(bm, radi_vert_start_idx, &CC_verts);
 		}
 
 		debug_colorize(bm, cam_loc);
