@@ -1953,6 +1953,12 @@ static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_vert
 						  break;
 						}
 					}
+                    
+                    if(f == NULL){
+						//TODO check if it's a big problem if we can't get the face we created by dissolving the vert
+						printf("face null!\n");
+						continue;
+					}
 
 					BM_mesh_elem_hflag_disable_all(bm, BM_FACE, BM_ELEM_TAG, false);
 					BM_elem_flag_enable(f, BM_ELEM_TAG);
