@@ -1358,12 +1358,15 @@ static void cusp_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 	}
 }
 
-static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam_loc[3], float co_arr[3][3],
-		const bool b_arr[3], const float u_arr[3], const float v_arr[3], const int face_index, float rad_co[3]){
+static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad_plane_no1[3], const float rad_plane_no2[2],
+		const float CC1_pos[3], const float CC2_pos[3], float co_arr[3][3],
+		const bool b_arr[3], const float u_arr[3], const float v_arr[3], const int face_index, float uv[2]){
 	//If area is <= 1e-14, then we set the center of the triangle as the cusp
 	//TODO the paper has 1e-20
 	if( area_tri_v3(co_arr[0], co_arr[1], co_arr[2]) <= 1e-14 ){
-		cent_tri_v3(cusp_co, co_arr[0], co_arr[1], co_arr[2]);
+		uv[0] = ( u_arr[0] + u_arr[1] + u_arr[3] ) / 3.0f;
+		uv[1] = ( v_arr[0] + v_arr[1] + v_arr[3] ) / 3.0f;
+
 		return true;		
 	}
 
@@ -1379,15 +1382,30 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 	}
 
 	bool rad2_sign_cross(const float u[3], const float v[3]){
-		float k_r1 = get_k_r(eval, face_index, u[0], v[0], cam_loc);
-		float k_r2 = get_k_r(eval, face_index, u[1], v[1], cam_loc);
-		if( (k_r1 > 0) != (k_r2 > 0) ){
-			//k_r sign crossing!
+		float temp[3], P[3], val1, val2;
+
+        openSubdiv_evaluateLimit(eval, face_index, u[0], v[0], P, NULL, NULL);
+
+		sub_v3_v3v3(temp, P, CC2_pos);
+		val1 = dot_v3v3(rad_plane_no2, temp);
+
+        openSubdiv_evaluateLimit(eval, face_index, u[1], v[1], P, NULL, NULL);
+
+		sub_v3_v3v3(temp, P, CC2_pos);
+		val2 = dot_v3v3(rad_plane_no2, temp);
+
+		if( (val1 > 0) != (val2 > 0) ){
+			//rad sign crossing!
 			return true;
 		} else {
 			//check last vert
-			float k_r3 = get_k_r(eval, face_index, u[2], v[2], cam_loc);
-			if( (k_r1 > 0) != (k_r3 > 0) ){
+			float val3;
+
+			openSubdiv_evaluateLimit(eval, face_index, u[2], v[2], P, NULL, NULL);
+
+			sub_v3_v3v3(temp, P, CC2_pos);
+			val3 = dot_v3v3(rad_plane_no2, temp);
+			if( (val1 > 0) != (val3 > 0) ){
 				return true;
 			}
 		}
@@ -1401,7 +1419,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 	{
 		//Which edge is the longest in parameter space?
 		float e1_len, e2_len, e3_len, du[3], dv[3];
-		float new_co[3], uv_co[2];
+		float new_co[3], temp[3], uv_co[2];
 		bool new_b;
 
 		e1_len = len_v3v3(co_arr[0], co_arr[1]);
@@ -1424,17 +1442,18 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
-				new_b = calc_if_B(cam_loc, new_co, du, dv);
+				sub_v3_v3v3(temp, new_co, CC1_pos);
+				new_b = (dot_v3v3(rad_plane_no1, temp) > 0);
 				{
 					bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
 					float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
 					float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
 
-					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 						float new_co_arr[3][3];
 						copy_m3_m3(new_co_arr, co_arr);
 						copy_v3_v3(new_co_arr[1], new_co);
-						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 							return true;
 						}
 					}
@@ -1444,11 +1463,11 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 					float new_u_arr[3] = { uv_co[0], u_arr[1], u_arr[2] };
 					float new_v_arr[3] = { uv_co[1], v_arr[1], v_arr[2] };
 
-					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 						float new_co_arr[3][3];
 						copy_m3_m3(new_co_arr, co_arr);
 						copy_v3_v3(new_co_arr[0], new_co);
-						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 							return true;
 						}
 					}
@@ -1460,18 +1479,19 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
-				new_b = calc_if_B(cam_loc, new_co, du, dv);
+				sub_v3_v3v3(temp, new_co, CC1_pos);
+				new_b = (dot_v3v3(rad_plane_no1, temp) > 0);
 
 				{
 					bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
 					float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
 					float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
 
-					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 						float new_co_arr[3][3];
 						copy_m3_m3(new_co_arr, co_arr);
 						copy_v3_v3(new_co_arr[1], new_co);
-						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 							return true;
 						}
 					}
@@ -1481,11 +1501,11 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 					float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
 					float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
 
-					if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+					if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 						float new_co_arr[3][3];
 						copy_m3_m3(new_co_arr, co_arr);
 						copy_v3_v3(new_co_arr[2], new_co);
-						if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+						if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 							return true;
 						}
 					}
@@ -1498,18 +1518,19 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
-			new_b = calc_if_B(cam_loc, new_co, du, dv);
+			sub_v3_v3v3(temp, new_co, CC1_pos);
+			new_b = (dot_v3v3(rad_plane_no1, temp) > 0);
 
 			{
 				bool new_b_arr[3] = { new_b, b_arr[1], b_arr[2] };
 				float new_u_arr[3] = { uv_co[0], u_arr[1], u_arr[2] };
 				float new_v_arr[3] = { uv_co[1], v_arr[1], v_arr[2] };
 
-				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+				if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 					float new_co_arr[3][3];
 					copy_m3_m3(new_co_arr, co_arr);
 					copy_v3_v3(new_co_arr[0], new_co);
-					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+					if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 						return true;
 					}
 				}
@@ -1519,11 +1540,11 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
 				float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
 
-				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+				if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 					float new_co_arr[3][3];
 					copy_m3_m3(new_co_arr, co_arr);
 					copy_v3_v3(new_co_arr[2], new_co);
-					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+					if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 						return true;
 					}
 				}
@@ -1535,18 +1556,19 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
-			new_b = calc_if_B(cam_loc, new_co, du, dv);
+			sub_v3_v3v3(temp, new_co, CC1_pos);
+			new_b = (dot_v3v3(rad_plane_no1, temp) > 0);
 
 			{
 				bool new_b_arr[3] = { b_arr[0], new_b, b_arr[2] };
 				float new_u_arr[3] = { u_arr[0], uv_co[0], u_arr[2] };
 				float new_v_arr[3] = { v_arr[0], uv_co[1], v_arr[2] };
 
-				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+				if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 					float new_co_arr[3][3];
 					copy_m3_m3(new_co_arr, co_arr);
 					copy_v3_v3(new_co_arr[1], new_co);
-					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+					if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 						return true;
 					}
 				}
@@ -1556,11 +1578,11 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 				float new_u_arr[3] = { u_arr[0], u_arr[1], uv_co[0] };
 				float new_v_arr[3] = { v_arr[0], v_arr[1], uv_co[1] };
 
-				if( normal_sign_cross(new_b_arr) && k_r_sign_cross(new_u_arr, new_v_arr) ){
+				if( rad1_sign_cross(new_b_arr) && rad2_sign_cross(new_u_arr, new_v_arr) ){
 					float new_co_arr[3][3];
 					copy_m3_m3(new_co_arr, co_arr);
 					copy_v3_v3(new_co_arr[2], new_co);
-					if(cusp_triangle(eval, cam_loc, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, cusp_co)){
+					if(rad_triangle(eval, rad_plane_no1, rad_plane_no2, CC1_pos, CC2_pos, new_co_arr, new_b_arr, new_u_arr, new_v_arr, face_index, uv)){
 						return true;
 					}
 				}
@@ -1572,8 +1594,25 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float cam
 	return false;
 }
 
-static BMVert *poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const float du[3], const float dv[3]){
+static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const float du[3], const float dv[3]){
 	BMVert *vert;
+    BMEdge *edge;
+	BMIter iter_e;
+    bool rot_edge = false;
+
+	BM_ITER_ELEM (edge, &iter_e, f, BM_EDGES_OF_FACE){
+		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < 1e-3){
+			rot_edge = true;
+			break;
+		}
+	}
+	
+    if( rot_edge ){
+		if( !BM_edge_rotate_check(edge) ){
+			//Do not insert a radial edge here
+			return false;
+		}
+	}
 
 	BM_mesh_elem_hflag_disable_all(bm, BM_FACE, BM_ELEM_TAG, false);
 	BM_elem_flag_enable(f, BM_ELEM_TAG);
@@ -1586,7 +1625,12 @@ static BMVert *poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const
 	cross_v3_v3v3(vert->no, dv, du);
 	normalize_v3(vert->no);
 
-	return vert;
+	if( rot_edge ){
+		BM_edge_rotate(bm, edge, true, 0);
+		printf("rotated edge!\n");
+	}
+
+	return true;
 }
 
 static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffer, struct OpenSubdiv_EvaluatorDescr *eval,
@@ -1667,7 +1711,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 
 				//get uv coord and orig face
 			    orig_face = get_orig_face(bm_orig, orig_verts, vert_arr, u_arr, v_arr, co_arr, new_vert_buffer);
-				if( CC2_idx != -1 ){
+				if( CC2_idx != -1 && false ){
 					//Do the radial planes intersect?
 					float rad_plane_no2[3];
 					float val2_1, val2_2;
@@ -1686,8 +1730,31 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 
 					if( signf(val2_1) != signf(val2_2) ){
 						//TODO handle this
+						int face_index = BM_elem_index_get(orig_face);
+						float uv[2];
+						bool b_arr[3];
+                        
+						b_arr[mod_i(CC_idx-1, 3)] = (val_1 > 0);
+						b_arr[mod_i(CC_idx+1, 3)] = (val_2 > 0);
+						b_arr[CC_idx] = false;
 						printf("Radial intersect!\n");
-						continue;
+						if (rad_triangle(eval, rad_plane_no, rad_plane_no2, co_arr[CC_idx], co_arr[CC2_idx],
+								     co_arr, b_arr, u_arr, v_arr, face_index, uv))
+						{
+							float P[3], du[3], dv[3];
+							Vert_buf v_buf;
+							v_buf.orig_edge = NULL;
+							v_buf.orig_face = orig_face;
+							v_buf.u = uv[0];
+							v_buf.v = uv[1];
+								
+							openSubdiv_evaluateLimit(eval, face_index, uv[0], uv[1], P, du, dv);
+							if( poke_and_move(bm, f, P, du, dv) ){
+								BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+							}
+							printf("Found radi point!\n");
+							continue;
+						}
 					}
 				}
 
@@ -1716,8 +1783,9 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
                         v_buf.orig_face = orig_face;
 						v_buf.u = cent_uv[0];
 						v_buf.v = cent_uv[1];
-						poke_and_move(bm, f, P, du, dv);
-						BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+						if( poke_and_move(bm, f, P, du, dv) ){
+							BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+						}
                         continue;
 					}
 
@@ -1753,8 +1821,9 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 								v_buf.orig_face = orig_face;
 								v_buf.u = cent_uv[0];
 								v_buf.v = cent_uv[1];
-								poke_and_move(bm, f, P, du, dv);
-								BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+								if( poke_and_move(bm, f, P, du, dv) ){
+									BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+								}
 							}
 						} else {
 							for( i = 0; i < 10; i++){
@@ -1783,8 +1852,9 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 								v_buf.orig_face = orig_face;
 								v_buf.u = cent_uv[0];
 								v_buf.v = cent_uv[1];
-								poke_and_move(bm, f, P, du, dv);
-								BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+								if( poke_and_move(bm, f, P, du, dv) ){
+									BLI_buffer_append(new_vert_buffer, Vert_buf, v_buf);
+								}
 							}
 						}
 					}
