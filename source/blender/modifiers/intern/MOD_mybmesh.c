@@ -550,6 +550,12 @@ static void append_vert(BLI_Buffer *CC_verts, BMVert *vert){
 	BLI_buffer_append(CC_verts, BMVert*, vert);
 }
 
+static bool check_and_shift(BMVert *vert, const float new_loc[3]){
+	//TODO add all shiftability checks
+	copy_v3_v3(vert->co, new_loc);
+	return true;
+}
+
 static bool bisect_search(const float v1_uv[2], const float v2_uv[2], struct OpenSubdiv_EvaluatorDescr *eval,
 						BMesh *bm, BMEdge *e, int face_index, const float cam_loc[3], float uv_result[2],
 						BLI_Buffer *CC_verts){
@@ -578,12 +584,12 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], struct Ope
 		step_len = step_len/2.0f;
 	}
 	
-	if( len_v3v3(P, e->v1->co) < 1e-3 ){
+	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P) ){
 		//Do not insert a new vert here
 		append_vert(CC_verts, e->v1);
 		//TODO shift vert
 		return false;
-	} else if (len_v3v3(P, e->v2->co) < 1e-3 ){
+	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P) ){
 		//Do not insert a new vert here
 		append_vert(CC_verts, e->v2);
 		//TODO shift vert
@@ -1236,13 +1242,13 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 								interp_v2_v2v2(edge_uv, uv_1, uv_2, t);
 								openSubdiv_evaluateLimit(eval, face_index, edge_uv[0], edge_uv[1], P, du, dv);
 
-								if( len_v3v3(P, edge->v1->co) < 1e-3 || len_v3v3(P, edge->v2->co) < 1e-3 ){
+								if( len_v3v3(P, edge->v1->co) < BM_edge_calc_length(edge) * 0.2f || len_v3v3(P, edge->v2->co) < BM_edge_calc_length(edge) * 0.2f ){
 									//Check if we should use the original edge (no new verts)
 									BMVert *orig_v;
 									BMEdge *orig_edge;
 									Cusp cusp;
 
-									if( len_v3v3(P, edge->v1->co) < 1e-3 ){
+									if( len_v3v3(P, edge->v1->co) < BM_edge_calc_length(edge) * 0.2f ){
 										orig_v = edge->v1;
 									} else {
 										orig_v = edge->v2;
@@ -1602,7 +1608,7 @@ static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const fl
 
 	BM_ITER_ELEM (edge, &iter_e, f, BM_EDGES_OF_FACE){
 		//TODO check for folds not distance
-		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < len_v3v3(edge->v1->co, edge->v2->co) * 0.1f){
+		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < BM_edge_calc_length(edge) * 0.1f){
 			rot_edge = true;
 			break;
 		}
@@ -2029,6 +2035,8 @@ static void debug_colorize(BMesh *bm, const float cam_loc[3]){
 		BM_face_calc_center_mean(f, P);
 		if( calc_if_B_nor(cam_loc, P, f->no) ){
 			f->mat_nr = 1;
+		} else {
+			f->mat_nr = 0;
 		}
 	}
 }
@@ -2039,11 +2047,41 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 
 	DerivedMesh *result;
 	BMesh *bm_orig, *bm;
+	bool quad_mesh = true;
 
 	//CCGSubSurf *ss;
     struct OpenSubdiv_EvaluatorDescr *osd_eval;
 
 	bm = DM_to_bmesh(dm, true);
+	
+	//TODO use this to check if we need to subdivide the mesh to get a quad mesh.
+	{
+		BMIter iter;
+		BMFace *f, *f_next;
+		int sides = 4;
+		/* use the mutable iterator so we can remove data as its looped over */
+		BM_ITER_MESH_MUTABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
+			if (f->len != sides) {
+				quad_mesh = false;
+				break;
+			}
+		}
+	}
+
+	if (!quad_mesh){
+        if( mmd->camera_ob != NULL ){
+			debug_colorize(bm, cam_loc);
+		}
+
+		result = CDDM_from_bmesh(bm, true);
+
+		BM_mesh_free(bm);
+
+		result->dirty |= DM_DIRTY_NORMALS;
+
+		return result;
+	}
+
 	//Keep a copy of the original mesh
 	bm_orig = DM_to_bmesh(dm, true);
     
@@ -2115,19 +2153,6 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 
 	result->dirty |= DM_DIRTY_NORMALS;
 
-	//TODO use this to check if we need to subdivide the mesh to get a quad mesh.
-	if(0){
-	BMIter iter;
-	BMFace *f, *f_next;
-	int sides = 4;
-	/* use the mutable iterator so we can remove data as its looped over */
-	BM_ITER_MESH_MUTABLE (f, f_next, &iter, bm, BM_FACES_OF_MESH) {
-		if (f->len == sides) {
-			BM_face_kill(bm, f);
-		}
-	}
-	}
-
 	return result;
 }
 
@@ -2160,16 +2185,20 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	if(mmd->camera_ob){
 
 		copy_v3_v3(cam_loc, mmd->camera_ob->loc);
+		/*
 		printf("Cam loc:\n");
 		printf("1: %f\n", cam_loc[0]);
 		printf("2: %f\n", cam_loc[1]);
 		printf("3: %f\n", cam_loc[2]);
+		*/
 		//convert camera origin from world coord to the modifier obj local coords
 		mul_m4_v3(ob->obmat, cam_loc);
+		/*
 		printf("Cam loc 2:\n");
 		printf("1: %f\n", cam_loc[0]);
 		printf("2: %f\n", cam_loc[1]);
 		printf("3: %f\n", cam_loc[2]);
+		*/
 	}
 
 	if (!(result = mybmesh_do(dm, mmd, cam_loc))) {
