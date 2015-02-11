@@ -1886,7 +1886,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 	}
 }
 
-static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_verts){
+static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_verts){
 
 	int vert_i;
 	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
@@ -1912,7 +1912,7 @@ static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_vert
 				edge_vert = e->v2;
 			}
 			
-			if( !(BM_elem_index_get(edge_vert) < radi_start_idx) ){
+			if( !(BM_elem_index_get(edge_vert) < *radi_start_idx) ){
                 //This is a radial/CC edge vert, do not try to flip it.
 				continue;
 			}
@@ -1951,6 +1951,9 @@ static void radial_flip(BMesh *bm, const int radi_start_idx, BLI_Buffer *CC_vert
 				}
 
 				printf("dissolve vert!\n");
+
+                //Count down radi_start_idx because we have fewer verts after the dissolve;
+				*radi_start_idx -= 1;
 
 				//Can't simply rotate it. Dissolve the vert and triangulate the resulting vert
 				BM_mesh_elem_hflag_disable_all(bm, BM_VERT, BM_ELEM_TAG, false);
@@ -2046,8 +2049,6 @@ static void debug_colorize_radi(BMesh *bm, const float cam_loc[3], int radi_star
 	BMFace *f;
 	BMEdge *e;
 	float P[3];
-
-	//TODO some radial edges does not get marked. Probably because of the "dissolve vert" opertation
 
 	int vert_i;
 	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
@@ -2172,7 +2173,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		}
 
 		if (mmd->flag & MOD_MYBMESH_RAD_FLIP){
-			radial_flip(bm, radi_vert_start_idx, &CC_verts);
+			radial_flip(bm, &radi_vert_start_idx, &CC_verts);
 		}
 
 		debug_colorize(bm, cam_loc);
