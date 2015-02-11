@@ -2041,6 +2041,42 @@ static void debug_colorize(BMesh *bm, const float cam_loc[3]){
 	}
 }
 
+static void debug_colorize_radi(BMesh *bm, const float cam_loc[3], int radi_start_idx, BLI_Buffer *CC_verts){
+	BMIter iter, iter_e;
+	BMFace *f;
+	BMEdge *e;
+	float P[3];
+
+	//TODO some radial edges does not get marked. Probably because of the "dissolve vert" opertation
+
+	int vert_i;
+	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
+		BMVert *vert = BLI_buffer_at(CC_verts, BMVert*, vert_i); 
+
+		BM_ITER_ELEM (e, &iter_e, vert, BM_EDGES_OF_VERT) {
+            BMVert *edge_vert;
+
+			if(e->v1 != vert){
+				edge_vert = e->v1;
+			} else {
+				edge_vert = e->v2;
+			}
+
+			if( !(BM_elem_index_get(edge_vert) < radi_start_idx) ){
+				//This is a radial/CC edge vert.
+				BM_ITER_ELEM (f, &iter, e, BM_FACES_OF_EDGE){
+					BM_face_calc_center_mean(f, P);
+					if( calc_if_B_nor(cam_loc, P, f->no) ){
+						f->mat_nr = 3;
+					} else {
+						f->mat_nr = 2;
+					}
+				}
+			}
+		}
+	}
+}
+
 /* bmesh only function */
 static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float cam_loc[3])
 {
@@ -2140,6 +2176,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		}
 
 		debug_colorize(bm, cam_loc);
+		debug_colorize_radi(bm, cam_loc, radi_vert_start_idx, &CC_verts);
 		BLI_buffer_free(&new_vert_buffer);
 		BLI_buffer_free(&cusp_edges);
 		BLI_buffer_free(&CC_verts);
