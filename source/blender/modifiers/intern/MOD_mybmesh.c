@@ -550,8 +550,60 @@ static void append_vert(BLI_Buffer *CC_verts, BMVert *vert){
 	BLI_buffer_append(CC_verts, BMVert*, vert);
 }
 
-static bool check_and_shift(BMVert *vert, const float new_loc[3]){
+static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du[3], const float dv[3]){
 	//TODO add all shiftability checks
+	typedef struct {
+		float no[3];
+	} Normal;
+	
+	float old_loc[3];
+
+    copy_v3_v3( old_loc, vert->co );
+
+    // Will the shift create folds?
+	// TODO perhaps only checking for huge normal changes in not enough?
+	{
+
+		BLI_buffer_declare_static(Normal, old_normals, BLI_BUFFER_NOP, 32);
+		BMFace* f;
+		BMIter iter_f;
+		int i = 0;
+
+		//Copy old face normals
+		BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+			Normal nor;
+			BM_face_calc_normal(f, nor.no);
+			BLI_buffer_append(&old_normals, Normal, nor);
+		}
+
+		copy_v3_v3(vert->co, new_loc);
+
+		//Check if the new position changed any of the normals drastically (potential fold)
+		BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+			float no[3];
+			float old_no[3];
+			
+			BM_face_calc_normal(f, no);
+
+			copy_v3_v3( old_no, BLI_buffer_at(&old_normals, Normal, i).no );
+            if( dot_v3v3( old_no, no ) < 0.2f ){
+				//Big change in normal dir, potential fold, abort
+				copy_v3_v3(vert->co, old_loc);
+				return false;
+			}
+
+			i++;
+		}
+
+		//Move the vert back for future checks
+        copy_v3_v3(vert->co, old_loc);
+
+		BLI_buffer_free(&old_normals);
+	}
+	//Adjust vert normal to the limit normal
+	cross_v3_v3v3(vert->no, dv, du);
+	normalize_v3(vert->no);
+
 	copy_v3_v3(vert->co, new_loc);
 	return true;
 }
@@ -584,13 +636,13 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], struct Ope
 		step_len = step_len/2.0f;
 	}
 	
-	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P) ){
-		//Do not insert a new vert here
+	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P, du, dv) ){
+		//Do not insert a new vert here, shift it instead
 		append_vert(CC_verts, e->v1);
 		//TODO shift vert
 		return false;
-	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P) ){
-		//Do not insert a new vert here
+	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P, du, dv) ){
+		//Do not insert a new vert here, shift it instead
 		append_vert(CC_verts, e->v2);
 		//TODO shift vert
 		return false;
