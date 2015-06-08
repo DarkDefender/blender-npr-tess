@@ -1975,6 +1975,9 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
                     if(f == NULL){
 						//TODO check if it's a big problem if we can't get the face we created by dissolving the vert
 						printf("face null!\n");
+						BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+							f->mat_nr = 4;
+						}
 						continue;
 					}
 
@@ -2035,6 +2038,9 @@ static void debug_colorize(BMesh *bm, const float cam_loc[3]){
 	float P[3];
 
 	BM_ITER_MESH (f, &iter, bm, BM_FACES_OF_MESH){
+		if( f->mat_nr == 4 ){
+			continue;
+		}
 		BM_face_calc_center_mean(f, P);
 		if( calc_if_B_nor(cam_loc, P, f->no) ){
 			f->mat_nr = 1;
@@ -2066,6 +2072,9 @@ static void debug_colorize_radi(BMesh *bm, const float cam_loc[3], int radi_star
 			if( !(BM_elem_index_get(edge_vert) < radi_start_idx) ){
 				//This is a radial/CC edge vert.
 				BM_ITER_ELEM (f, &iter, e, BM_FACES_OF_EDGE){
+					if( f->mat_nr == 4 ){
+						continue;
+					}
 					BM_face_calc_center_mean(f, P);
 					if( calc_if_B_nor(cam_loc, P, f->no) ){
 						f->mat_nr = 3;
