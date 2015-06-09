@@ -586,9 +586,10 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
 			BM_face_calc_normal(f, no);
 
 			copy_v3_v3( old_no, BLI_buffer_at(&old_normals, Normal, i).no );
-            if( dot_v3v3( old_no, no ) < 0.2f ){
+            if( dot_v3v3( old_no, no ) < 0.5f ){
 				//Big change in normal dir, potential fold, abort
 				copy_v3_v3(vert->co, old_loc);
+				printf("Skipped shift vert!\n");
 				return false;
 			}
 
@@ -846,6 +847,21 @@ static void contour_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_bu
 			continue;
 		}
 
+		//Check if the edge already has a C vert
+		{
+			int vert_i;
+			bool skip_edge = false;
+			for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
+				BMVert* C_vert = BLI_buffer_at(CC_verts, BMVert*, vert_i);
+				if( e->v1 == C_vert || e->v2 == C_vert){
+					skip_edge = true;
+				}
+			}  
+
+			if(skip_edge) {
+				continue;
+			}
+		}
 		search_edge(bm, bm_orig, new_vert_buffer, i, e, eval, cam_loc, CC_verts );
 	}
 }
