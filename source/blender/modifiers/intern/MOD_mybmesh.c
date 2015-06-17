@@ -1954,8 +1954,40 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 	}
 }
 
-static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_verts){
+static bool radial_CC_vert(BMVert *v, int * const radi_start_idx, BLI_Buffer *CC_verts){
 
+
+	if( !(BM_elem_index_get(v) < *radi_start_idx) ){
+		//This is a radial vert
+		return true;
+	}
+
+	{
+		int vert_j;
+		bool CC_vert = false;
+		for(vert_j = 0; vert_j < CC_verts->count; vert_j++){
+			BMVert *cc_vert = BLI_buffer_at(CC_verts, BMVert*, vert_j);
+			if( cc_vert == v ){
+				CC_vert = true;
+				break;
+			}
+		}
+		if( CC_vert ){
+			//This is a CC vert
+			return true;
+		}
+	}
+
+	return false;
+}
+
+static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_verts){
+	
+	bool done = false;
+
+    while( !done ){
+
+	int flips = 0;
 	int vert_i;
 	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
 		BMEdge *e;
@@ -1980,26 +2012,13 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 				edge_vert = e->v2;
 			}
 			
-			if( !(BM_elem_index_get(edge_vert) < *radi_start_idx) ){
-                //This is a radial/CC edge vert, do not try to flip it.
+			if( radial_CC_vert( edge_vert, radi_start_idx, CC_verts ) ){
+                //This is a radial or CC edge, do not try to flip it.
 				continue;
 			}
-			{
-				int vert_j;
-				bool CC_vert = false;
-				for(vert_j = 0; vert_j < CC_verts->count; vert_j++){
-					BMVert *cc_vert = BLI_buffer_at(CC_verts, BMVert*, vert_j);
-                    if( cc_vert == edge_vert ){
-						CC_vert = true;
-						break;
-					}
-				}
-				if( CC_vert ){
-					//This is a CC edge vert, do not try to flip it.
-					continue;
-				}
-			}
+
             //See if it's possible to rotate the edge at all
+			// IE check for mesh border edges etc
             if( !BM_edge_rotate_check(e) ){
 				//Not possible, bail
 				printf("Couldn't rotate edge!\n");
@@ -2011,52 +2030,129 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 				BMLoop *l1, *l2;
                 BM_edge_calc_rotate(e, true, &l1, &l2);
                 
+                // new_v1 = l1->v;
+                // new_v2 = l2->v;
+
+                if( BM_elem_index_get(l1->v) < *radi_start_idx &&
+                    BM_elem_index_get(l2->v) < *radi_start_idx ){
+					//The flip will not increase the number of standard radial triangles
+					//Do not flip it
+					continue;
+				}
+				//Check if the flip creates any folds or other troublesome geometry
+				//TODO perhaps need to check for folds manually?
+				//(Is the degenerate check enough or does a manual BM_face_point_inside_test(f, co); needed? ) 
 				//Returns true if not degenerate
 				if( BM_edge_rotate_check_degenerate(e, l1, l2) ){
 					//We can simply rotate it!
 					BM_edge_rotate(bm, e, true, 0);
+					flips++;
 					continue;
 				}
 
 				printf("dissolve vert!\n");
-
-                //Count down radi_start_idx because we have fewer verts after the dissolve;
-				*radi_start_idx -= 1;
-
-				//Can't simply rotate it. Dissolve the vert and triangulate the resulting vert
-				BM_mesh_elem_hflag_disable_all(bm, BM_VERT, BM_ELEM_TAG, false);
-				BM_elem_flag_enable(edge_vert, BM_ELEM_TAG);
-				BMO_op_callf(bm, BMO_FLAG_DEFAULTS, "dissolve_verts verts=%hv", BM_ELEM_TAG);
 				
-				//Get the new face
 				{
-					BMIter iter_f;
-					BMFace *f;
+					int edge_count = BM_vert_edge_count(edge_vert);
+					BMEdge *cur_e = e;
+					BMEdge *edge_arr[edge_count];
+					int edge_idx = 0;
 
-					BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
-						if( f->len > 3 ){
-                          //We found our face
-						  break;
-						}
-					}
-                    
-                    if(f == NULL){
-						//TODO check if it's a big problem if we can't get the face we created by dissolving the vert
-						printf("face null!\n");
-						BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
-							f->mat_nr = 4;
-						}
+                    BMEdge *rad1_edge = BM_edge_exists(l1->v, edge_vert);
+                    BMEdge *rad2_edge = BM_edge_exists(l2->v, edge_vert);
+
+                    BMLoop *first_loop = BM_face_vert_share_loop( cur_e->l->f, edge_vert); 
+                    BMLoop *cur_loop = first_loop;
+
+                    if( edge_count - 3 < 1 ){
 						continue;
 					}
 
-					BM_mesh_elem_hflag_disable_all(bm, BM_FACE, BM_ELEM_TAG, false);
-					BM_elem_flag_enable(f, BM_ELEM_TAG);
-					BMO_op_callf(bm, BMO_FLAG_DEFAULTS, "triangulate faces=%hf", BM_ELEM_TAG);
+					if( rad1_edge == NULL || rad2_edge == NULL){
+						printf("Couldn't find the edges connected to the radial vert! (dissolve vert)\n");
+						continue;
+					}
+					
+					if( cur_loop == NULL ){
+						printf("Couldn't find face loop!\n");
+					}
+
+					while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_e)) != first_loop) && (cur_loop != NULL)) {
+                        if(cur_e == e || cur_e == rad1_edge || cur_e == rad2_edge){
+							continue;
+						}
+
+						edge_arr[edge_idx] = cur_e;
+						edge_idx++;
+
+					}
+
+					for( edge_idx = 0; edge_idx < edge_count - 3; edge_idx++){
+						BMLoop *loop1, *loop2;
+						BM_edge_calc_rotate(edge_arr[edge_idx], true, &loop1, &loop2);
+
+						if( BM_edge_rotate_check_degenerate(edge_arr[edge_idx], loop1, loop2) ){
+							BM_edge_rotate(bm, edge_arr[edge_idx], true, 0);
+						} else {
+							//Try to rotate from the other side instead
+							printf("Try from other side!\n");
+							break;
+						}
+					}
+
+					if( edge_idx != edge_count - 3 ){
+						int op_idx = edge_count -4;
+                        bool failed_rotate = false;
+
+						for(; edge_idx <= op_idx; op_idx--){
+
+							BMLoop *loop1, *loop2;
+							BM_edge_calc_rotate(edge_arr[op_idx], true, &loop1, &loop2);
+
+                            if( edge_idx == op_idx ){
+								//This is the last edge that is going to be rotated
+								// check_degenerate is too strict in this case (in most cases the face area will be near zero)
+								//TODO only check for folds
+								if( BM_edge_rotate_check(edge_arr[op_idx]) ){
+									BM_edge_rotate(bm, edge_arr[op_idx], true, 0);
+									continue;
+								} else {
+									failed_rotate = true;
+									break;
+								}
+							}
+
+							if( BM_edge_rotate_check_degenerate(edge_arr[op_idx], loop1, loop2) ){
+								BM_edge_rotate(bm, edge_arr[op_idx], true, 0);
+							} else {
+								failed_rotate = true;
+								break;
+							}
+						}
+
+                        if( failed_rotate ){
+                            printf("Failed to flip and delete in radial edge flip!\n");
+							continue;
+						}
+
+					}
+				}
+
+				if( BM_disk_dissolve(bm, edge_vert) ){
+					//Count down radi_start_idx because we have fewer verts after the dissolve;
+					flips++;
+					*radi_start_idx -= 1;
 				}
 
 			}
 
 		}
+	}
+
+	if(flips == 0){
+		done = true;
+	}
+
 	}
 }
 
@@ -2252,6 +2348,9 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		if (mmd->flag & MOD_MYBMESH_RAD_FLIP){
 			radial_flip(bm, &radi_vert_start_idx, &CC_verts);
 		}
+
+        //Recalculate normals for debug drawing
+		BM_mesh_normals_update(bm);
 
 		debug_colorize(bm, cam_loc);
 		debug_colorize_radi(bm, cam_loc, radi_vert_start_idx, &CC_verts);
