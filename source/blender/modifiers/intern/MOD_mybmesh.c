@@ -1670,20 +1670,29 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 
 static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const float du[3], const float dv[3]){
 	BMVert *vert;
-    BMEdge *edge;
-	BMIter iter_e;
+    BMEdge *edge = NULL;
     bool rot_edge = false;
 
-	BM_ITER_ELEM (edge, &iter_e, f, BM_EDGES_OF_FACE){
-		//TODO check for folds not distance
-		if(dist_to_line_segment_v3(new_pos, edge->v1->co, edge->v2->co) < BM_edge_calc_length(edge) * 0.1f){
-			rot_edge = true;
-			break;
+	if( !BM_face_point_inside_test(f, new_pos) ){
+		BMIter iter_e;
+		BMIter iter_f;
+		BMEdge *e;
+		BMFace *face;
+
+        rot_edge = true;
+
+		BM_ITER_ELEM (e, &iter_e, f, BM_EDGES_OF_FACE){
+			BM_ITER_ELEM (face, &iter_f, e, BM_FACES_OF_EDGE){
+				if( BM_face_point_inside_test(face, new_pos) ){
+					edge = e;
+					break;
+				}
+			}
 		}
 	}
 	
     if( rot_edge ){
-		if( !BM_edge_rotate_check(edge) ){
+		if( edge == NULL || !BM_edge_rotate_check(edge) ){
 			//Do not insert a radial edge here
 			return false;
 		}
