@@ -1432,7 +1432,7 @@ static void cusp_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 	}
 }
 
-static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad_plane_no1[3], const float rad_plane_no2[2],
+static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad_plane_no1[3], const float rad_plane_no2[3],
 		const float CC1_pos[3], const float CC2_pos[3], float co_arr[3][3],
 		const bool b_arr[3], const float u_arr[3], const float v_arr[3], const int face_index, float uv[2]){
 	//If area is <= 1e-14, then we set the center of the triangle as the cusp
