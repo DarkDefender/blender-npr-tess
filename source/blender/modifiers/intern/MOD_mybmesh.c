@@ -2095,6 +2095,10 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 						edge_idx++;
 
 					}
+					
+					if(cur_loop == NULL){
+						continue;
+					}
 
 					for( edge_idx = 0; edge_idx < edge_count - 3; edge_idx++){
 						BMLoop *loop1, *loop2;
@@ -2121,9 +2125,8 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
                             if( edge_idx == op_idx ){
 								//This is the last edge that is going to be rotated
 								// check_degenerate is too strict in this case (in most cases the face area will be near zero)
-								//TODO only check for folds
-								if( BM_edge_rotate_check(edge_arr[op_idx]) ){
-									BM_edge_rotate(bm, edge_arr[op_idx], true, 0);
+								//TODO check for folds
+								if(	BM_edge_rotate(bm, edge_arr[op_idx], true, 0) != NULL ){
 									continue;
 								} else {
 									failed_rotate = true;
