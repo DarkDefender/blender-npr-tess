@@ -2261,6 +2261,8 @@ static void optimization( BMesh *bm, const float cam_loc[3], int * const radi_st
 
 						BM_edge_ordered_verts(edge, &v1, &v2);
 
+                        //TODO perhaps use normal_tri_v3 instead for normal calc
+
 						sub_v3_v3v3(vec1, v1->co, l1->v->co);
 						sub_v3_v3v3(vec2, v1->co, l2->v->co);
 
@@ -2399,9 +2401,80 @@ static void optimization( BMesh *bm, const float cam_loc[3], int * const radi_st
 	}
 
 	// 2.b (Not in the paper) Smooth vertex position
+	// TODO perhaps move this to before wiggling in normal direction (IE after step 4)
 	{
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+
+			BMVert *vert;
+			BMIter iter_v;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (vert, &iter_v, inface->face, BM_VERTS_OF_FACE) {
+				if( BM_elem_index_get(vert) < *radi_start_idx ){
+					//not a radial vert, try to smooth the vertex pos and see if the consistency improves
+
+					float old_pos[3], co[3], co2[2];
+                    int i = 0;
+					bool done = true;
+                    
+					BMEdge *edge;
+					BMIter iter_e;
+
+					zero_v3(co);
+                    copy_v3_v3(old_pos, vert->co);
 
 
+					BM_ITER_ELEM (edge, &iter_e, vert, BM_EDGES_OF_VERT) {
+						copy_v3_v3(co2, BM_edge_other_vert(edge, vert)->co);
+						add_v3_v3v3(co, co, co2);
+						i += 1;
+					}
+
+					mul_v3_fl(co, 1.0f / (float)i);
+					mid_v3_v3v3(co, co, vert->co);
+
+                    copy_v3_v3(vert->co, co);
+
+					{
+						BMFace *face;
+						BMIter iter_f;
+
+						BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
+                            float no[3];
+                            float P[3];
+							BM_face_calc_normal(face, no);
+							BM_face_calc_center_mean(face, P);
+
+                            if( inface->back_f != calc_if_B_nor(cam_loc, P, no) ){
+								//Bad vertex move
+								printf("Bad vert smooth\n");
+								//Move the vertex back to it's original position
+
+								copy_v3_v3(vert->co, old_pos);
+								done = false;
+								break;
+							}
+
+						}
+
+						if( done ){
+							//Good vert smooth
+							inface->face->mat_nr = 0;
+							inface->face = NULL;
+							break;
+						}
+					}
+
+				}
+			}
+		}
 	}
 
 	// 3. Vertex wiggling in paramter space
@@ -2409,7 +2482,88 @@ static void optimization( BMesh *bm, const float cam_loc[3], int * const radi_st
 	// 4. Edge Splitting
 	
 	// 5. Vertex wiggling in normal direction
-	
+	{
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+
+			BMVert *vert;
+			BMIter iter_v;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (vert, &iter_v, inface->face, BM_VERTS_OF_FACE) {
+				if( BM_elem_index_get(vert) < *radi_start_idx ){
+					BMEdge *edge;
+					BMIter iter_e;
+					float old_pos[3];
+                    float len = 0.0f;
+					int i = 0;
+					bool done = false;
+
+                    copy_v3_v3(old_pos, vert->co);
+
+					BM_ITER_ELEM (edge, &iter_e, vert, BM_EDGES_OF_VERT) {
+						len += BM_edge_calc_length(edge);
+						i++;
+					}
+
+                    len = len / (float)(i*2);
+					
+					for( i = 0; i < 100; i++ ){
+						BMFace *face;
+						BMIter iter_f;
+						bool found_point = true;
+						float co[3];
+						float cur_len;
+
+						copy_v3_v3(co, vert->no);
+
+                        if( i % 2 ){
+							cur_len = len * (float)((i+1)/2) / 50.0f;
+						} else {
+							cur_len = len * (float)((i+2)/2) / -50.0f;
+						}
+
+						mul_v3_fl(co, cur_len);
+
+						add_v3_v3v3(vert->co, old_pos, co);
+
+						BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
+                            float no[3];
+                            float P[3];
+							BM_face_calc_normal(face, no);
+							BM_face_calc_center_mean(face, P);
+
+                            if( inface->back_f != calc_if_B_nor(cam_loc, P, no) ){
+								found_point = false;
+								break;
+							}
+						}
+
+                        if( found_point ){
+							done = true;
+							break;
+						}
+
+					}
+
+					if( done ){
+						inface->face->mat_nr = 0;
+						inface->face = NULL;
+						printf("Opti normal wiggle\n");
+						break;
+					} else {
+						copy_v3_v3(vert->co, old_pos);
+					}
+				}
+			}
+		}
+	}
 	//Cleanup
    	BLI_buffer_free(&inco_faces);
 }
