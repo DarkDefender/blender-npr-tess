@@ -69,6 +69,12 @@ typedef struct {
 	float cusp_co[3];
 } Cusp;
 
+typedef struct {
+	BMFace *face;
+	//Should be front or back facing?
+	bool back_f;
+} IncoFace;
+
 //TODO for Kr look in subdiv.cpp in coutours source code (II)
 
 //TODO dynamic arrays, use BLI_stack, BLI_buffer, BLI_mempool, BLI_memarena.
@@ -1808,6 +1814,7 @@ static void radial_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buf
 				//get uv coord and orig face
 			    orig_face = get_orig_face(bm_orig, orig_verts, vert_arr, u_arr, v_arr, co_arr, new_vert_buffer);
 				if( CC2_idx != -1 ){
+					//This face has an CC edge
 					//Do the radial planes intersect?
 					float rad_plane_no2[3];
 					float val2_1, val2_2;
@@ -2168,6 +2175,245 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 	}
 }
 
+static void optimization( BMesh *bm, const float cam_loc[3], int * const radi_start_idx, BLI_Buffer *CC_verts ){
+
+	BLI_buffer_declare_static(IncoFace, inco_faces, BLI_BUFFER_NOP, 32);
+    //Find and save all inconsistent faces before we begin trying to optimize the mesh
+	{
+		int i;
+		BMVert *vert;
+		BMIter iter_v;
+		//TODO is there anyway to begin at radi_start_idx?
+		BM_ITER_MESH_INDEX (vert, &iter_v, bm, BM_VERTS_OF_MESH, i) {
+
+			if( i < *radi_start_idx ){
+				continue;
+			}
+
+			{
+                BMFace *face;
+				BMIter iter_f;
+				bool b_f = calc_if_B_nor(cam_loc, vert->co, vert->no);
+				float P[3];
+
+				BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
+					//TODO mark inconsistent faces in an other way
+					// and only check each face once
+					if(face->mat_nr == 4){
+						//Already added this face to inco_faces
+						continue;
+					}
+
+                    BM_face_calc_center_mean(face, P);
+
+					if( b_f != calc_if_B_nor(cam_loc, P, face->no) ){
+						IncoFace inface;
+						inface.face = face;
+						inface.back_f = b_f;
+						face->mat_nr = 4;	
+						BLI_buffer_append(&inco_faces, IncoFace, inface);
+					}
+
+				}
+			}
+
+		}
+	}
+	// 1. Radial edge extension
+	
+	// 2. Edge flipping
+	{
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+
+			BMEdge *edge;
+			BMIter iter_e;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (edge, &iter_e, inface->face, BM_EDGES_OF_FACE) {
+				
+                if( !BM_edge_rotate_check(edge) ){
+					continue;
+				}
+
+				if( BM_elem_index_get(edge->v1) < *radi_start_idx || BM_elem_index_get(edge->v2) < *radi_start_idx ){
+					//This is not a radial triangle edge, see if we can flip it
+					BMLoop *l1, *l2;
+					BM_edge_calc_rotate(edge, true, &l1, &l2);
+
+                    if( !BM_edge_rotate_check_degenerate(edge, l1, l2) ){
+						continue;
+					}
+
+					if( !BM_edge_rotate_check_beauty(edge, l1, l2) ){
+						continue;
+					}
+
+					{
+						float vec1[3], vec2[3], P[3], no[3];
+                        BMVert *v1, *v2;
+
+						BM_edge_ordered_verts(edge, &v1, &v2);
+
+						sub_v3_v3v3(vec1, v1->co, l1->v->co);
+						sub_v3_v3v3(vec2, v1->co, l2->v->co);
+
+                        cross_v3_v3v3(no, vec1, vec2);
+						normalize_v3(no);
+
+						//Calc center mean of new face
+						zero_v3(P);
+						add_v3_v3( P, v1->co );
+						add_v3_v3( P, l1->v->co );
+						add_v3_v3( P, l2->v->co );
+
+						mul_v3_fl( P, 1.0f / 3.0f );
+
+						if( inface->back_f != calc_if_B_nor(cam_loc, P, no) ){
+							//This is not a good flip!
+							printf("Opti flip, first face not good\n");
+							continue;
+						}
+
+						sub_v3_v3v3(vec1, v2->co, l1->v->co);
+						sub_v3_v3v3(vec2, v2->co, l2->v->co);
+
+                        cross_v3_v3v3(no, vec2, vec1);
+						normalize_v3(no);
+
+						//Calc center mean of new face
+						zero_v3(P);
+						add_v3_v3( P, v2->co );
+						add_v3_v3( P, l1->v->co );
+						add_v3_v3( P, l2->v->co );
+
+						mul_v3_fl( P, 1.0f / 3.0f );
+
+						if( inface->back_f != calc_if_B_nor(cam_loc, P, no) ){
+							//This is not a good flip!
+							printf("Opti flip, second face not good\n");
+							continue;
+						}
+
+                        printf("Opti filped an edge!\n");
+
+						//TODO remove this or only when debug
+                        inface->face->mat_nr = 0;
+
+						BM_edge_rotate(bm, edge, true, 0);
+						inface->face = NULL;
+						//Done with this face
+						break;
+					}
+				}
+
+			}
+
+		}
+	}
+	// 2.a (Not in the paper) Vertex dissolve
+	{
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+
+			BMVert *vert;
+			BMIter iter_v;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (vert, &iter_v, inface->face, BM_VERTS_OF_FACE) {
+				if( BM_elem_index_get(vert) < *radi_start_idx ){
+					//Not a radial vert, see if we can dissolve it to improve the consistency
+					
+                    if( BM_vert_edge_count(vert) == 3 && BM_vert_face_count(vert) == 3 ){
+						float vec1[3], vec2[3], P[3], no[3];
+						BMLoop *l1, *l2;
+                        BMVert *v1, *v2;
+						BM_edge_calc_rotate(vert->e, true, &l1, &l2);
+
+						BM_edge_ordered_verts(vert->e, &v1, &v2);
+						
+						if( vert == v1 ){
+							sub_v3_v3v3(vec1, v2->co, l1->v->co);
+							sub_v3_v3v3(vec2, v2->co, l2->v->co);
+
+							cross_v3_v3v3(no, vec2, vec1);
+							normalize_v3(no);
+
+							//Calc center mean of new face
+							zero_v3(P);
+							add_v3_v3( P, v2->co );
+							add_v3_v3( P, l1->v->co );
+							add_v3_v3( P, l2->v->co );
+
+							mul_v3_fl( P, 1.0f / 3.0f );
+						} else {
+							sub_v3_v3v3(vec1, v1->co, l1->v->co);
+							sub_v3_v3v3(vec2, v1->co, l2->v->co);
+
+							cross_v3_v3v3(no, vec1, vec2);
+							normalize_v3(no);
+
+							//Calc center mean of new face
+							zero_v3(P);
+							add_v3_v3( P, v1->co );
+							add_v3_v3( P, l1->v->co );
+							add_v3_v3( P, l2->v->co );
+
+							mul_v3_fl( P, 1.0f / 3.0f );
+						}
+
+						if(inface->back_f == calc_if_B_nor(cam_loc, P, no)){
+							printf("Opti dissolve\n");
+							//TODO remove this or only when debug
+							inface->face->mat_nr = 0;
+
+                            if(!BM_disk_dissolve(bm, vert)){
+                                printf("Failed to opti dissolve\n");
+								continue;
+							}
+							//Count down radi_start_idx because we have fewer verts after the dissolve;
+							*radi_start_idx -= 1;
+
+							inface->face = NULL;
+							//Done with this face
+							break;
+						}
+
+					}
+
+				}
+			}
+		}
+	}
+
+	// 2.b (Not in the paper) Smooth vertex position
+	{
+
+
+	}
+
+	// 3. Vertex wiggling in paramter space
+	
+	// 4. Edge Splitting
+	
+	// 5. Vertex wiggling in normal direction
+	
+	//Cleanup
+   	BLI_buffer_free(&inco_faces);
+}
+
 static struct OpenSubdiv_EvaluatorDescr *create_osd_eval(BMesh *bm){
 	//TODO create FAR meshes instead. (Perhaps the code in contour subdiv can help?)
 	int subdiv_levels = 1;
@@ -2361,8 +2607,15 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 			radial_flip(bm, &radi_vert_start_idx, &CC_verts);
 		}
 
-        //Recalculate normals for debug drawing
+        //Recalculate normals
 		BM_mesh_normals_update(bm);
+
+		// (6.4) Optimization
+		if (mmd->flag & MOD_MYBMESH_RAD_FLIP){
+			optimization(bm, cam_loc, &radi_vert_start_idx, &CC_verts);
+			//Recalculate normals
+			BM_mesh_normals_update(bm);
+		}
 
 		debug_colorize(bm, cam_loc);
 		debug_colorize_radi(bm, cam_loc, radi_vert_start_idx, &CC_verts);
