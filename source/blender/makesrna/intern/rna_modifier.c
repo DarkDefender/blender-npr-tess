@@ -3707,6 +3707,11 @@ static void rna_def_modifier_mybmesh(BlenderRNA *brna)
 	RNA_def_property_ui_text(prop, "Radial edge flip", "Do radial edge flipping");
 	RNA_def_property_update(prop, 0, "rna_Modifier_update");
 
+	prop = RNA_def_property(srna, "do_opti", PROP_BOOLEAN, PROP_NONE);
+	RNA_def_property_boolean_sdna(prop, NULL, "flag", MOD_MYBMESH_OPTI);
+	RNA_def_property_ui_text(prop, "Mesh optimization", "Try to eliminate inconsistent faces");
+	RNA_def_property_update(prop, 0, "rna_Modifier_update");
+
  	prop = RNA_def_property(srna, "camera_object", PROP_POINTER, PROP_NONE);
 	RNA_def_property_pointer_sdna(prop, NULL, "camera_ob");
 	RNA_def_property_ui_text(prop, "Camera Object", "Object to use as camera location");

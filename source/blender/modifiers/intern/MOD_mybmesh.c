@@ -2765,7 +2765,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		BM_mesh_normals_update(bm);
 
 		// (6.4) Optimization
-		if (mmd->flag & MOD_MYBMESH_RAD_FLIP){
+		if (mmd->flag & MOD_MYBMESH_OPTI){
 			optimization(bm, cam_loc, &radi_vert_start_idx, &CC_verts);
 			//Recalculate normals
 			BM_mesh_normals_update(bm);

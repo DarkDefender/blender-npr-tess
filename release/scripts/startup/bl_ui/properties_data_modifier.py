@@ -562,6 +562,7 @@ class DATA_PT_modifiers(ModifierButtonsPanel, Panel):
         col.label(text="§6.3:")
         col.prop(md, "do_rad_insert")
         col.prop(md, "do_rad_flip")
+        col.prop(md, "do_opti")
                                                 
 
         col = layout.column()
