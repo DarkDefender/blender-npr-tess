@@ -183,7 +183,7 @@ static BMVert *split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new
 }
 
 
-static void split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new_pos[3]){
+static BMVert* split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new_pos[3], const float new_no[3]){
 	//Split edge one time and move the created vert to new_pos
 	
     BMVert *vert;
@@ -197,6 +197,8 @@ static void split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new_po
 	//Get the newly created vertex
 	vert = BM_vert_at_index_find(bm, BM_mesh_elem_count(bm, BM_VERT) - 1);
 	copy_v3_v3(vert->co, new_pos);
+	copy_v3_v3(vert->no, new_no);
+	return vert;
 }
 	
 static void get_uv_coord(BMVert *vert, BMFace *f, float *u, float *v){
@@ -544,20 +546,21 @@ static void convert_uv_to_new_face(BMEdge *e, BMFace *f, float *u, float *v){
 	
 }
 
-static void append_vert(BLI_Buffer *CC_verts, BMVert *vert){
+static bool append_vert(BLI_Buffer *CC_verts, BMVert *vert){
 	int vert_i;
 
 	//check if vert is already in the buffer
 	for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
 		if( vert == BLI_buffer_at(CC_verts, BMVert*, vert_i)){
-			return;
+			return false;
 		}
 	}
 	BLI_buffer_append(CC_verts, BMVert*, vert);
+	return true;
 }
 
-static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du[3], const float dv[3]){
-	//TODO add all shiftability checks
+static bool check_and_shift(BMVert *vert, const float new_loc[3], const float cam_loc[3], const float du[3], const float dv[3], BLI_Buffer *CC_verts){
+	//TODO add all shiftability checks from the paper
 	typedef struct {
 		float no[3];
 	} Normal;
@@ -596,6 +599,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
 				//Big change in normal dir, potential fold, abort
 				copy_v3_v3(vert->co, old_loc);
 				printf("Skipped shift vert!\n");
+				BLI_buffer_free(&old_normals);
 				return false;
 			}
 
@@ -606,6 +610,59 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
         copy_v3_v3(vert->co, old_loc);
 
 		BLI_buffer_free(&old_normals);
+	}
+
+	//Check if the shift might/will cause a CCC face
+	{
+		BLI_buffer_declare_static(BMVert*, c_verts, BLI_BUFFER_NOP, 32);
+		BMFace* f;
+		BMIter iter_f;
+
+		BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+            BMEdge* e;
+			BMIter iter_e;
+			int num_cross = 0; //number of zero crossing edges
+			BM_ITER_ELEM (e, &iter_e, f, BM_EDGES_OF_FACE) {
+				if( e->v1 != vert && e->v2 != vert ){
+					int vert_i;		
+					int edge_c_verts = 0;
+					for(vert_i = 0; vert_i < CC_verts->count; vert_i++){
+						BMVert* C_vert = BLI_buffer_at(CC_verts, BMVert*, vert_i);
+						if( e->v1 == C_vert ) {
+						    edge_c_verts++;
+
+							if( append_vert( &c_verts, e->v1 ) ){
+								num_cross++;
+							}
+						}
+						if( e->v2 == C_vert ){
+						    edge_c_verts++;
+
+							if( append_vert( &c_verts, e->v2 ) ){
+								num_cross++;
+							}
+						}
+					}  
+
+					if ( edge_c_verts >= 2 ){
+						//TODO if > 2 then we have added duplicate verts to CC_verts, should not happen!
+						BLI_buffer_free(&c_verts);
+						return false;
+					}
+
+                    if( edge_c_verts == 0 && calc_if_B_nor(cam_loc, e->v1->co, e->v1->no) != calc_if_B_nor(cam_loc, e->v2->co, e->v2->no) ){
+						num_cross++;
+					}
+
+					if( num_cross > 2 ) {
+						BLI_buffer_free(&c_verts);
+						return false;
+					}
+
+				}
+			}
+		}
+		BLI_buffer_free(&c_verts);
 	}
 	//Adjust vert normal to the limit normal
 	cross_v3_v3v3(vert->no, dv, du);
@@ -643,12 +700,12 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], struct Ope
 		step_len = step_len/2.0f;
 	}
 	
-	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P, du, dv) ){
+	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P, cam_loc, du, dv, CC_verts) ){
 		//Do not insert a new vert here, shift it instead
 		append_vert(CC_verts, e->v1);
 		//TODO shift vert
 		return false;
-	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P, du, dv) ){
+	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P, cam_loc, du, dv, CC_verts) ){
 		//Do not insert a new vert here, shift it instead
 		append_vert(CC_verts, e->v2);
 		//TODO shift vert
@@ -1286,6 +1343,7 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 								}
 							}
 
+							/*
 							//Check if point is really close to the FF/BB edge
 							if( dist_to_line_segment_v3(cusp_co, a, b) < 1e-3){
 								//Use this as a cusp edge
@@ -1296,6 +1354,7 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 								printf("--->Found close cusp!\n");
 								continue;
 							}
+							*/
 
 							printf("t: %f\n", t);
 
@@ -1329,11 +1388,7 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 									}
 
 									BM_ITER_ELEM (orig_edge, &iter_e, f, BM_EDGES_OF_FACE) {
-										if( equals_v3v3(orig_edge->v1->co, orig_v->co) && equals_v3v3(orig_edge->v2->co, c) ){
-											//Found edge
-											break;
-										}
-										if( equals_v3v3(orig_edge->v1->co, c) && equals_v3v3(orig_edge->v2->co, orig_v->co) ){
+										if( orig_edge != edge && (orig_edge->v1 == orig_v || orig_edge->v2 == orig_v) ){
 											//Found edge
 											break;
 										}
@@ -1343,7 +1398,11 @@ static void cusp_detection(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 									copy_v3_v3(cusp.cusp_co, cusp_co);
 									BLI_buffer_append(cusp_edges, Cusp, cusp);
 
-									//TODO shift vert
+									//Shift vert
+									copy_v3_v3(orig_v->co, P);
+									//Adjust vert normal to the limit normal
+									cross_v3_v3v3(orig_v->no, dv, du);
+									normalize_v3(orig_v->no);
 
 									printf("Used orig edge for cusp!\n");
 									continue;
@@ -1420,18 +1479,10 @@ static void cusp_insertion(BMesh *bm, BMesh *bm_orig, BLI_Buffer *new_vert_buffe
 	int cusp_i;
 
 	for(cusp_i = 0; cusp_i < cusp_edges->count; cusp_i++){
+		BMVert *vert;
 		Cusp cusp = BLI_buffer_at(cusp_edges, Cusp, cusp_i);
-		//TODO shift cusp edges properly
-		/*
-		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < 1e-3 || len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < 1e-3 ){
-			//Do not insert a new vert here
-			//TODO check if cusp detection is working as it's supposed to...
-			//TODO this should never happen. ALWAYS insert detected cusps
-			printf("skipped cups insert\n");
-			continue;
-		}
-		split_edge_and_move_cusp(bm, cusp.cusp_e, cusp.cusp_co);
-		*/
+		//vert = split_edge_and_move_cusp(bm, cusp.cusp_e, cusp.cusp_co);
+		//append_vert(CC_verts, vert);
         int i = BM_elem_index_get(cusp.cusp_e);
 		search_edge(bm, bm_orig, new_vert_buffer, i, cusp.cusp_e, eval, cam_loc, CC_verts);
 
@@ -2066,7 +2117,7 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 					continue;
 				}
 
-				printf("dissolve vert!\n");
+				printf("Try to dissolve vert!\n");
 				
 				{
 					int edge_count = BM_vert_edge_count(edge_vert);
@@ -2161,6 +2212,7 @@ static void radial_flip(BMesh *bm, int * const radi_start_idx, BLI_Buffer *CC_ve
 					//Count down radi_start_idx because we have fewer verts after the dissolve;
 					flips++;
 					*radi_start_idx -= 1;
+					printf("Dissolved vert!\n");
 				}
 
 			}
