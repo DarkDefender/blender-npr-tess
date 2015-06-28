@@ -626,6 +626,22 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
 		BLI_buffer_free(&old_normals);
 	}
 
+	//Will this shift a cusp edge
+	{
+		int edge_i;
+        BMEdge *edge;
+		BMIter iter_e;
+
+		BM_ITER_ELEM (edge, &iter_e, vert, BM_EDGES_OF_VERT) {
+			for(edge_i = 0; edge_i < m_d->cusp_edges->count; edge_i++){
+				BMEdge* cusp_edge = BLI_buffer_at(m_d->cusp_edges, Cusp, edge_i).cusp_e;
+				if( edge == cusp_edge ){
+					return false;
+				}
+			}
+		}
+	}
+
 	//Check if the shift might/will cause a CCC face
 	{
 		BLI_buffer_declare_static(BMVert*, c_verts, BLI_BUFFER_NOP, 32);
@@ -693,8 +709,6 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 	float step = 0.5f;
 	float step_len = 0.25f;
 	float v1_face = get_facing_dir_nor(m_d->cam_loc, e->v1->co, e->v1->no);
-	bool is_cusp = false;
-    bool can_shift = true;
 
 	for( i = 0; i < 10; i++){
 		interp_v2_v2v2( uv_P, v1_uv, v2_uv, step);		
@@ -715,32 +729,18 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 		step_len = step_len/2.0f;
 	}
 	
-	if(can_shift){
-		if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P, du, dv, m_d) ){
-			//Do not insert a new vert here, shift it instead
-			append_vert(m_d->C_verts, e->v1);
-			//TODO shift vert
-			return false;
-		} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P, du, dv, m_d) ){
-			//Do not insert a new vert here, shift it instead
-			append_vert(m_d->C_verts, e->v2);
-			//TODO shift vert
-			return false;
-		}
-	} else if ( !is_cusp ){
-		if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.05f ){
-			//Do not insert a new vert here, use the original one instead
-			append_vert(m_d->C_verts, e->v1);
-			//TODO shift vert
-			return false;
-		} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.05f ){
-			//Do not insert a new vert here, use the original one instead
-			append_vert(m_d->C_verts, e->v2);
-			//TODO shift vert
-			return false;
-		}
+	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v1, P, du, dv, m_d) ){
+		//Do not insert a new vert here, shift it instead
+		append_vert(m_d->C_verts, e->v1);
+		//TODO shift vert
+		return false;
+	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f && check_and_shift(e->v2, P, du, dv, m_d) ){
+		//Do not insert a new vert here, shift it instead
+		append_vert(m_d->C_verts, e->v2);
+		//TODO shift vert
+		return false;
 	}
-
+	
 	copy_v2_v2(uv_result, uv_P);
 	{
 		BMVert *vert = split_edge_and_move_vert(m_d->bm, e, P, du, dv);
