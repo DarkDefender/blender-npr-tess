@@ -784,12 +784,13 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 		int edge_idx = 0, face_idx = 0;
 		BMEdge *up, *down, *left, *right, *cur_edge;
 		BMFace *quadrants[4];
-		BMIter iter_e;
 
-        printf("before iter\n");
+		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert ); 
+		BMLoop *cur_loop = first_loop;
 
-		//Find the edges that will act as the ab axis
-		BM_ITER_ELEM_INDEX ( cur_edge, &iter_e, vert, BM_EDGES_OF_VERT, edge_idx ){
+        cur_edge = vert->e;
+
+		while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_edge)) != first_loop) && (cur_loop != NULL)) {
 			switch(edge_idx){
 				case 0 : right = cur_edge;
 						 break;
@@ -800,139 +801,152 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 				default: down = cur_edge;
 						 break;
 			}
-		}
+			edge_idx++;
 
-        printf("after iter\n");
-		BM_ITER_ELEM_INDEX (face, &iter_f, vert, BM_FACES_OF_VERT, face_idx) {
-			BMLoop *l_iter = BM_face_vert_share_loop(face, vert);
-            float u,v;
+			{
+				float u, v;
+				face = cur_loop->f;
 
-            //Save face for later use
-			quadrants[face_idx] = face;
+				//Save face for later use
+				quadrants[face_idx] = face;
 
-			get_uv_coord(vert, face, &u, &v);
-            face_uv[ face_idx ][0][0] = u;
-            face_uv[ face_idx ][0][1] = v;
+				get_uv_coord(vert, face, &u, &v);
+				face_uv[ face_idx ][0][0] = u;
+				face_uv[ face_idx ][0][1] = v;
 
 
-			get_uv_coord(l_iter->next->v, face, &u, &v);
+				get_uv_coord(cur_loop->next->v, face, &u, &v);
 
-			// The BMLoop edge consist of the current vertex and the vertex in l_iter->next->v
-			if( l_iter->e == right ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else if( l_iter->e == up ){
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			} else if( l_iter->e == left ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else {
-				//down
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			}
+				printf("New face\n");
 
-			get_uv_coord(l_iter->prev->v, face, &u, &v);
-			if( l_iter->prev->e == right ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else if( l_iter->prev->e == right ){
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			} else if( l_iter->prev->e == right ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else {
-				//down
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			}
-
-            //Convert the supplied uv coords to ab coords
-			if( face == f || face == f2 ){
-                float a,b;
-
-				if( face == f ){
-					u = v1_uv[0];
-					v = v1_uv[1];
+				// The BMLoop edge consist of the current vertex and the vertex in cur_loop->next->v
+				if( cur_loop->e == right ){
+					printf("right\n");
+					face_uv[ face_idx ][2][0] = u;
+					face_uv[ face_idx ][2][1] = v;
+				} else if( cur_loop->e == up ){
+					printf("up\n");
+					face_uv[ face_idx ][1][0] = u;
+					face_uv[ face_idx ][1][1] = v;
+				} else if( cur_loop->e == left ){
+					printf("left\n");
+					face_uv[ face_idx ][2][0] = u;
+					face_uv[ face_idx ][2][1] = v;
 				} else {
-					u = v2_uv[0];
-					v = v2_uv[1];
+					//down
+					printf("down\n");
+					face_uv[ face_idx ][1][0] = u;
+					face_uv[ face_idx ][1][1] = v;
 				}
 
-				//Convert the u axis
-				if( face_uv[ face_idx ][0][0] == 0 ){
-					if( face_uv[ face_idx ][2][0] == 0 ){
-						//b coord is mapped to u
-						b = u;
-					} else {
-						//a coord is mapped to u
-						a = u;
-					}
+				get_uv_coord(cur_loop->prev->v, face, &u, &v);
+				if( cur_loop->prev->e == right ){
+					printf("right\n");
+					face_uv[ face_idx ][2][0] = u;
+					face_uv[ face_idx ][2][1] = v;
+				} else if( cur_loop->prev->e == up ){
+					printf("up\n");
+					face_uv[ face_idx ][1][0] = u;
+					face_uv[ face_idx ][1][1] = v;
+				} else if( cur_loop->prev->e == left ){
+					printf("left\n");
+					face_uv[ face_idx ][2][0] = u;
+					face_uv[ face_idx ][2][1] = v;
 				} else {
-					if( face_uv[ face_idx ][2][0] == 0 ){
-						//a coord is mapped to u
-						a = 1.0f - u;
+					printf("down\n");
+					//down
+					face_uv[ face_idx ][1][0] = u;
+					face_uv[ face_idx ][1][1] = v;
+				}
+
+				//Convert the supplied uv coords to ab coords
+				if( face == f || face == f2 ){
+					float a, b;
+
+					if( face == f ){
+						u = v1_uv[0];
+						v = v1_uv[1];
 					} else {
-						//b coord is mapped to u
-						b = 1.0f - u;
+						u = v2_uv[0];
+						v = v2_uv[1];
 					}
-				}
 
-				//Convert the v axis
-				if( face_uv[ face_idx ][0][1] == 0 ){
-					if( face_uv[ face_idx ][1][1] == 0 ){
-						//a coord is mapped to v
-						a = v;
+					//Convert the u axis
+					if( face_uv[ face_idx ][0][0] == 0 ){
+						if( face_uv[ face_idx ][2][0] == 0 ){
+							//b coord is mapped to u
+							b = u;
+						} else {
+							//a coord is mapped to u
+							a = u;
+						}
 					} else {
-						//b coord is mapped to v
-						b = v;
+						if( face_uv[ face_idx ][2][0] == 0 ){
+							//a coord is mapped to u
+							a = 1.0f - u;
+						} else {
+							//b coord is mapped to u
+							b = 1.0f - u;
+						}
 					}
-				} else {
-					if( face_uv[ face_idx ][1][1] == 0 ){
-						//b coord is mapped to v
-						b = 1.0f - v;
+
+					//Convert the v axis
+					if( face_uv[ face_idx ][0][1] == 0 ){
+						if( face_uv[ face_idx ][1][1] == 0 ){
+							//a coord is mapped to v
+							a = v;
+						} else {
+							//b coord is mapped to v
+							b = v;
+						}
 					} else {
-						//a coord is mapped to v
-						a = 1.0f - v;
+						if( face_uv[ face_idx ][1][1] == 0 ){
+							//b coord is mapped to v
+							b = 1.0f - v;
+						} else {
+							//a coord is mapped to v
+							a = 1.0f - v;
+						}
 					}
-				}
 
-                switch( face_idx ){
-					case 1 :
-						//2nd quadrant
-						a = -a;
-						break;
-					case 2 :
-						//3nd quadrant
-						a = -a;
-						b = -b;
-						break;
-					case 3 :
-						//4th quadrant
-						b = -b;
-						break;
-					default :
-						//1st quadrant
-						break;
-				}
+					printf("face_idx: %d\n", face_idx);
 
-                //first or second face?
-				if( face == f ){
-					ab_start[0] = a;
-					ab_start[1] = b;
-				} else {
-					ab_end[0] = a;
-					ab_end[1] = b;
-				}
+					switch( face_idx ){
+						case 1 :
+							//2nd quadrant
+							a = -a;
+							break;
+						case 2 :
+							//3nd quadrant
+							a = -a;
+							b = -b;
+							break;
+						case 3 :
+							//4th quadrant
+							b = -b;
+							break;
+						default :
+							//1st quadrant
+							break;
+					}
 
+					//first or second face?
+					if( face == f ){
+						ab_start[0] = a;
+						ab_start[1] = b;
+					} else {
+						ab_end[0] = a;
+						ab_end[1] = b;
+					}
+
+				}
+				face_idx++;
 			}
 		}
 		
 		//Now we can begin interpolating along the edge
 		{
-			float face_dir, uv_P[2], uv_a[2], uv_b[2],  P[3], du[3], dv[3];
+			float face_dir, uv_P[2], uv_1[2], uv_2[2],  P[3], du[3], dv[3];
 			float step = 0.5f;
 			float step_len = 0.25f;
 			float cur_ab[2];
@@ -958,28 +972,28 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 
 				cur_face = quadrants[q_idx];		 
 
-				interp_v2_v2v2( uv_a, face_uv[q_idx][0], face_uv[q_idx][2], fabs(cur_ab[0]) );
-				interp_v2_v2v2( uv_b, face_uv[q_idx][0], face_uv[q_idx][1], fabs(cur_ab[1]) );
+				interp_v2_v2v2( uv_1, face_uv[q_idx][0], face_uv[q_idx][2], fabs(cur_ab[0]) );
+				interp_v2_v2v2( uv_2, face_uv[q_idx][0], face_uv[q_idx][1], fabs(cur_ab[1]) );
 
                 if( face_uv[q_idx][0][0] == 1 ){
 					if( face_uv[q_idx][2][0] == 1 ){
-						uv_a[0] = 0;
+						uv_1[0] = 0;
 					}
 					if( face_uv[q_idx][1][0] == 1 ){
-						uv_b[0] = 0;
+						uv_2[0] = 0;
 					}
 				}
 
                 if( face_uv[q_idx][0][1] == 1 ){
 					if( face_uv[q_idx][2][1] == 1 ){
-						uv_a[1] = 0;
+						uv_1[1] = 0;
 					}
 					if( face_uv[q_idx][1][1] == 1 ){
-						uv_b[1] = 0;
+						uv_2[1] = 0;
 					}
 				}
 
-                add_v2_v2v2( uv_P, uv_a, uv_b );
+                add_v2_v2v2( uv_P, uv_1, uv_2 );
 
 				face_index = BM_elem_index_get(cur_face);
 				openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
@@ -1019,6 +1033,17 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 
 				BMVert *vert = split_edge_and_move_vert(m_d->bm, e, P, du, dv);
 				append_vert(m_d->C_verts, vert);
+
+                if( BM_elem_index_get(vert) == 995 ){
+					printf("GOT PROBLEM VERT!!!\n");
+					printf("ab_start %f, %f\n", ab_start[0], ab_start[1] );
+					printf("ab_end %f, %f\n", ab_end[0], ab_end[1] );
+					printf("uv_P %f, %f\n", uv_P[0], uv_P[1] );
+					printf("face_uv 1: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[0][0][0], face_uv[0][0][1], face_uv[0][1][0], face_uv[0][1][1], face_uv[0][2][0], face_uv[0][2][1]);
+					printf("face_uv 2: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[1][0][0], face_uv[1][0][1], face_uv[1][1][0], face_uv[1][1][1], face_uv[1][2][0], face_uv[1][2][1]);
+					printf("face_uv 3: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[2][0][0], face_uv[2][0][1], face_uv[2][1][0], face_uv[2][1][1], face_uv[2][2][0], face_uv[2][2][1]);
+					printf("face_uv 4: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[3][0][0], face_uv[3][0][1], face_uv[3][1][0], face_uv[3][1][1], face_uv[3][2][0], face_uv[3][2][1]);
+				}
 
 				new_buf.orig_face = cur_face;
 				new_buf.orig_edge = NULL;
@@ -2158,8 +2183,7 @@ static void radial_insertion( MeshData *m_d ){
     int initial_verts = BM_mesh_elem_count(m_d->bm, BM_VERT);
 
 	for(vert_i = 0; vert_i < m_d->C_verts->count; vert_i++){
-		int vert_idx, CC_idx;
-		int CC2_idx;
+		int vert_idx, CC_idx, CC2_idx;
 		float co_arr[3][3];
 		BMVert *vert_arr[3];
 		BMIter iter_v;
