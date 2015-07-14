@@ -2145,7 +2145,19 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 	return false;
 }
 
-static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const float du[3], const float dv[3]){
+
+static bool is_C_vert(BMVert *v, BLI_Buffer *C_verts){
+	int vert_j;
+	for(vert_j = 0; vert_j < C_verts->count; vert_j++){
+		BMVert *c_vert = BLI_buffer_at(C_verts, BMVert*, vert_j);
+		if( c_vert == v ){
+			return true;
+		}
+	}
+	return false;
+}
+
+static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
 	BMVert *vert;
     BMEdge *edge = NULL;
     bool rot_edge = false;
@@ -2161,8 +2173,10 @@ static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const fl
 		BM_ITER_ELEM (e, &iter_e, f, BM_EDGES_OF_FACE){
 			BM_ITER_ELEM (face, &iter_f, e, BM_FACES_OF_EDGE){
 				if( BM_face_point_inside_test(face, new_pos) ){
-					edge = e;
-					break;
+					if( !( is_C_vert( e->v1, m_d->C_verts ) && is_C_vert( e->v2, m_d->C_verts ) ) ){
+						edge = e;
+						break;
+					}
 				}
 			}
 		}
@@ -2175,11 +2189,11 @@ static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const fl
 		}
 	}
 
-	BM_mesh_elem_hflag_disable_all(bm, BM_FACE, BM_ELEM_TAG, false);
+	BM_mesh_elem_hflag_disable_all(m_d->bm, BM_FACE, BM_ELEM_TAG, false);
 	BM_elem_flag_enable(f, BM_ELEM_TAG);
-	BMO_op_callf(bm, BMO_FLAG_DEFAULTS, "poke faces=%hf", BM_ELEM_TAG);
+	BMO_op_callf(m_d->bm, BMO_FLAG_DEFAULTS, "poke faces=%hf", BM_ELEM_TAG);
 	//Get the newly created vertex
-	vert = BM_vert_at_index_find(bm, BM_mesh_elem_count(bm, BM_VERT) - 1);
+	vert = BM_vert_at_index_find(m_d->bm, BM_mesh_elem_count(m_d->bm, BM_VERT) - 1);
 	copy_v3_v3(vert->co, new_pos);
 
 	//Adjust vert normal to the limit normal
@@ -2187,7 +2201,7 @@ static bool poke_and_move(BMesh *bm, BMFace *f, const float new_pos[3], const fl
 	normalize_v3(vert->no);
 
 	if( rot_edge ){
-		BM_edge_rotate(bm, edge, true, 0);
+		BM_edge_rotate(m_d->bm, edge, true, 0);
 		printf("rotated edge!\n");
 	}
 
@@ -2321,7 +2335,7 @@ static void radial_insertion( MeshData *m_d ){
 							v_buf.v = uv[1];
 								
 							openSubdiv_evaluateLimit(m_d->eval, face_index, uv[0], uv[1], P, du, dv);
-							if( poke_and_move(m_d->bm, f, P, du, dv) ){
+							if( poke_and_move(f, P, du, dv, m_d) ){
 								BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
 							}
 							printf("Found radi point!\n");
@@ -2355,7 +2369,7 @@ static void radial_insertion( MeshData *m_d ){
                         v_buf.orig_face = orig_face;
 						v_buf.u = cent_uv[0];
 						v_buf.v = cent_uv[1];
-						if( poke_and_move(m_d->bm, f, P, du, dv) ){
+						if( poke_and_move(f, P, du, dv, m_d) ){
 							BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
 						}
 						printf("got lucky\n");
@@ -2395,7 +2409,7 @@ static void radial_insertion( MeshData *m_d ){
 								v_buf.orig_face = orig_face;
 								v_buf.u = cent_uv[0];
 								v_buf.v = cent_uv[1];
-								if( poke_and_move(m_d->bm, f, P, du, dv) ){
+								if( poke_and_move(f, P, du, dv, m_d) ){
 									BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
 								}
 							}
@@ -2427,7 +2441,7 @@ static void radial_insertion( MeshData *m_d ){
 								v_buf.orig_face = orig_face;
 								v_buf.u = cent_uv[0];
 								v_buf.v = cent_uv[1];
-								if( poke_and_move(m_d->bm, f, P, du, dv) ){
+								if( poke_and_move(f, P, du, dv, m_d) ){
 									BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
 								}
 							}
@@ -2447,20 +2461,8 @@ static bool radial_C_vert(BMVert *v, int * const radi_start_idx, BLI_Buffer *C_v
 		return true;
 	}
 
-	{
-		int vert_j;
-		bool C_vert = false;
-		for(vert_j = 0; vert_j < C_verts->count; vert_j++){
-			BMVert *c_vert = BLI_buffer_at(C_verts, BMVert*, vert_j);
-			if( c_vert == v ){
-				C_vert = true;
-				break;
-			}
-		}
-		if( C_vert ){
-			//This is a C vert
-			return true;
-		}
+	if( is_C_vert( v, C_verts) ){
+		return true;
 	}
 
 	return false;
