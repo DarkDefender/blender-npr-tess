@@ -92,6 +92,9 @@ typedef struct {
 	BLI_Buffer *C_verts;
 	//Radial edge vert start idx
 	int radi_start_idx;
+
+	//are we in the cusp insertion step
+	bool is_cusp;
 	
     struct OpenSubdiv_EvaluatorDescr *eval;
 } MeshData;
@@ -612,7 +615,7 @@ static void add_shifted_vert( BMVert *vert, BMFace *orig_face, float uv[2], Mesh
 	}
 }
 
-static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du[3], const float dv[3], MeshData *m_d){
+static bool check_and_shift(BMVert *vert, const float new_loc[3], const float new_no[3], MeshData *m_d){
 	//TODO add all shiftability checks from the paper
 	typedef struct {
 		float no[3];
@@ -666,7 +669,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
 	}
 
 	//Will this shift a cusp edge
-	{
+	if( !m_d->is_cusp ){
 		int edge_i;
         BMEdge *edge;
 		BMIter iter_e;
@@ -734,9 +737,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float du
 		BLI_buffer_free(&c_verts);
 	}
 	//Adjust vert normal to the limit normal
-	cross_v3_v3v3(vert->no, dv, du);
-	normalize_v3(vert->no);
-
+	copy_v3_v3(vert->no, new_no);
 	copy_v3_v3(vert->co, new_loc);
 	return true;
 }
@@ -946,7 +947,7 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 
 		//Now we can begin interpolating along the edge
 		{
-			float face_dir, uv_P[2], uv_1[2], uv_2[2],  P[3], du[3], dv[3];
+			float face_dir, uv_P[2], uv_1[2], uv_2[2],  P[3], du[3], dv[3], new_no[3];
 			float step = 0.5f;
 			float step_len = 0.25f;
 			float cur_ab[2];
@@ -1014,8 +1015,11 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 				step_len = step_len/2.0f;
 			}
 
+			cross_v3_v3v3(new_no, dv, du);
+			normalize_v3(new_no);
+
 			if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f ){
-				if(check_and_shift(e->v1, P, du, dv, m_d) ){
+				if(check_and_shift(e->v1, P, new_no, m_d) ){
 					//Do not insert a new vert here, shift it instead
 					append_vert(m_d->C_verts, e->v1);
 					add_shifted_vert( e->v1, cur_face, uv_P, m_d );
@@ -1025,7 +1029,7 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 					return;
 				}
 			} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f ){
-				if(check_and_shift(e->v2, P, du, dv, m_d) ){
+				if(check_and_shift(e->v2, P, new_no, m_d) ){
 				//Do not insert a new vert here, shift it instead
 				append_vert(m_d->C_verts, e->v2);
 				add_shifted_vert( e->v2, cur_face, uv_P, m_d );
@@ -1069,7 +1073,7 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e, BMFace *orig_face, float uv_result[2], MeshData *m_d ){
 	//Search edge for sign crossing and split it!
 	int i;
-	float face_dir, uv_P[2], P[3], du[3], dv[3];
+	float face_dir, uv_P[2], P[3], du[3], dv[3], new_no[3];
 	float step = 0.5f;
 	float step_len = 0.25f;
 	float v1_face = get_facing_dir_nor(m_d->cam_loc, e->v1->co, e->v1->no);
@@ -1094,8 +1098,11 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 		step_len = step_len/2.0f;
 	}
 	
+	cross_v3_v3v3(new_no, dv, du);
+	normalize_v3(new_no);
+
 	if( len_v3v3(P, e->v1->co) < BM_edge_calc_length(e) * 0.2f ){
-		if( check_and_shift(e->v1, P, du, dv, m_d) ){
+		if( check_and_shift(e->v1, P, new_no, m_d) ){
 			//Do not insert a new vert here, shift it instead
 			append_vert(m_d->C_verts, e->v1);
 			add_shifted_vert( e->v1, orig_face, uv_P, m_d );
@@ -1105,7 +1112,7 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 			return false;
 		}
 	} else if (len_v3v3(P, e->v2->co) < BM_edge_calc_length(e) * 0.2f ){
-		if( check_and_shift(e->v2, P, du, dv, m_d) ){
+		if( check_and_shift(e->v2, P, new_no, m_d) ){
 			//Do not insert a new vert here, shift it instead
 			append_vert(m_d->C_verts, e->v2);
 			add_shifted_vert( e->v2, orig_face, uv_P, m_d );
@@ -1809,6 +1816,7 @@ static void cusp_detection( MeshData *m_d ){
 								BMVert *edge_vert;
 								BMEdge *cusp_edge;
 								BMIter iter_e;
+								float new_no[3];
 
 								if( len_v3v3(P, edge->v1->co) < BM_edge_calc_length(edge) * 0.2f ){
 									edge_vert = edge->v1;
@@ -1823,8 +1831,11 @@ static void cusp_detection( MeshData *m_d ){
 									}
 								}
 
+								cross_v3_v3v3(new_no, dv, du);
+								normalize_v3(new_no);
+
 								//Can we shift this vertex?
-								if( check_and_shift(edge_vert, P, du, dv, m_d) ){
+								if( check_and_shift(edge_vert, P, new_no, m_d) ){
 									cusp.cusp_e = cusp_edge;
 									add_shifted_vert( edge_vert , orig_face, edge_uv, m_d );
 									BLI_buffer_append(m_d->cusp_edges, Cusp, cusp);
@@ -1893,10 +1904,29 @@ static void cusp_detection( MeshData *m_d ){
 static void cusp_insertion(MeshData *m_d){
 	int cusp_i;
 
+	m_d->is_cusp = true;
+
 	for(cusp_i = 0; cusp_i < m_d->cusp_edges->count; cusp_i++){
 		BMVert *vert;
 		Vert_buf new_buf;
 		Cusp cusp = BLI_buffer_at(m_d->cusp_edges, Cusp, cusp_i);
+
+		if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v1->co) < BM_edge_calc_length(cusp.cusp_e) * 0.2f ){
+			if(  BM_vert_edge_count(cusp.cusp_e->v1) == 4 && check_and_shift(cusp.cusp_e->v1, cusp.cusp_co, cusp.cusp_no, m_d) ){
+				float uv_P[2] = { cusp.u, cusp.v };
+				append_vert(m_d->C_verts, cusp.cusp_e->v1);
+				add_shifted_vert( cusp.cusp_e->v1, cusp.orig_face, uv_P, m_d );
+				continue;
+			}
+		} else if( len_v3v3(cusp.cusp_co, cusp.cusp_e->v2->co) < BM_edge_calc_length(cusp.cusp_e) * 0.2f ){
+			if(  BM_vert_edge_count(cusp.cusp_e->v2) == 4 && check_and_shift(cusp.cusp_e->v2, cusp.cusp_co, cusp.cusp_no, m_d) ){
+				float uv_P[2] = { cusp.u, cusp.v };
+				append_vert(m_d->C_verts, cusp.cusp_e->v2);
+				add_shifted_vert( cusp.cusp_e->v2, cusp.orig_face, uv_P, m_d );
+				continue;
+			}
+		}
+
 		vert = split_edge_and_move_cusp(m_d->bm, cusp.cusp_e, cusp.cusp_co, cusp.cusp_no);
 		append_vert(m_d->C_verts, vert);
         
@@ -1907,6 +1937,7 @@ static void cusp_insertion(MeshData *m_d){
 
 		BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, new_buf);
 	}
+	m_d->is_cusp = false;
 }
 
 static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad_plane_no1[3], const float rad_plane_no2[3],
@@ -3214,6 +3245,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 		mesh_data.shifted_verts = &shifted_verts;
 		mesh_data.cusp_edges = &cusp_edges;
 		mesh_data.C_verts = &C_verts;
+		mesh_data.is_cusp = false;
 		mesh_data.eval = osd_eval;
 
 		if (mmd->flag & MOD_MYBMESH_FF_SPLIT) {
