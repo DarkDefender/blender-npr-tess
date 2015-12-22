@@ -23,7 +23,7 @@
  *  \ingroup modifiers
  */
 
-/* This code is based of the tessellation part of the paper 
+/* This code is based of the tessellation part of the paper
  * "Computing Smooth Surface Contours with Accurate Topology"
  * (Pierre Bénard, Aaron Hertzmann, Michael Kass).
  * Currently available at:
@@ -95,7 +95,7 @@ typedef struct {
 
 	//are we in the cusp insertion step
 	bool is_cusp;
-	
+
     struct OpenSubdiv_EvaluatorDescr *eval;
 } MeshData;
 
@@ -104,9 +104,9 @@ typedef struct {
 //TODO dynamic arrays, use BLI_stack, BLI_buffer, BLI_mempool, BLI_memarena.
 
 static void verts_to_limit(BMesh *bm, struct OpenSubdiv_EvaluatorDescr *eval){
-	
+
 	int i, j;
-	
+
 	BMIter iter_v, iter_f;
 	BMVert *vert;
     BMFace *f;
@@ -186,7 +186,7 @@ static float get_facing_dir_nor(const float cam_loc[3], const float P[3], const 
 static BMVert *split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new_pos[3],
 									const float du[3], const float dv[3]){
 	//Split edge one time and move the created vert to new_pos
-	
+
     BMVert *vert;
 	printf("Split edge!\n");
 
@@ -209,7 +209,7 @@ static BMVert *split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new
 
 static BMVert* split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new_pos[3], const float new_no[3]){
 	//Split edge one time and move the created vert to new_pos
-	
+
     BMVert *vert;
 	printf("Cusp split!\n");
 
@@ -224,7 +224,7 @@ static BMVert* split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new
 	copy_v3_v3(vert->no, new_no);
 	return vert;
 }
-	
+
 static bool get_uv_coord(BMVert *vert, BMFace *f, float *u, float *v){
 	//Get U,V coords of a vertex
     int i;
@@ -252,7 +252,7 @@ static bool get_uv_coord(BMVert *vert, BMFace *f, float *u, float *v){
 
 static void split_BB_FF_edges(MeshData *m_d) {
     //Split BB,FF edges if they have sign crossings
-	
+
 	int i, face_index;
 	BMIter iter_f, iter_e;
 	BMEdge *e;
@@ -277,7 +277,7 @@ static void split_BB_FF_edges(MeshData *m_d) {
 		}
 
         //TODO perhaps we need to use the limit surface normal
-		
+
         is_B = calc_if_B_nor(m_d->cam_loc, e->v1->co, e->v1->no);
 
         if( is_B  != calc_if_B_nor(m_d->cam_loc, e->v2->co, e->v2->no) ){
@@ -297,8 +297,8 @@ static void split_BB_FF_edges(MeshData *m_d) {
 			BM_ITER_ELEM (f, &iter_f, orig_e, BM_FACES_OF_EDGE) {
                 //Get first face
 				break;
-			}     
-			
+			}
+
 			face_index = BM_elem_index_get(f);
 
 			v1 = orig_e->v1;
@@ -311,8 +311,8 @@ static void split_BB_FF_edges(MeshData *m_d) {
 			bool found_face;
 
 			//This should be safe because the vert count is still the same as the original mesh.
-			v1 = BM_vert_at_index_find( m_d->bm_orig, BM_elem_index_get( e->v1 ) ); 
-			v2 = BM_vert_at_index_find( m_d->bm_orig, BM_elem_index_get( e->v2 ) ); 
+			v1 = BM_vert_at_index_find( m_d->bm_orig, BM_elem_index_get( e->v1 ) );
+			v2 = BM_vert_at_index_find( m_d->bm_orig, BM_elem_index_get( e->v2 ) );
 
             vert_arr[0] = v1;
 			vert_arr[1] = v2;
@@ -343,7 +343,7 @@ static void split_BB_FF_edges(MeshData *m_d) {
 			if( is_B  != calc_if_B(m_d->cam_loc, P2, du, dv) ){
 				//FB edge, we only want to split FF or BB
 				//Skip to next edge
-				continue;  
+				continue;
 			}
 		}
         */
@@ -546,7 +546,7 @@ static float get_k_r(struct OpenSubdiv_EvaluatorDescr *eval, int face_index, flo
 
 static void convert_uv_to_new_face(BMEdge *e, BMFace *f, float *u, float *v){
 	//convert the old u/v coords to the new face coord
-	
+
 	float v1_u, v1_v, v2_u, v2_v, step;
 	float old_u = *u;
 	get_uv_coord(e->v1, f, &v1_u, &v1_v);
@@ -569,7 +569,7 @@ static void convert_uv_to_new_face(BMEdge *e, BMFace *f, float *u, float *v){
 		//This should not happen...
 		printf("convert_uv_to\n");
 	}
-	
+
 }
 
 static bool append_vert(BLI_Buffer *C_verts, BMVert *vert){
@@ -620,7 +620,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float ne
 	typedef struct {
 		float no[3];
 	} Normal;
-	
+
 	float old_loc[3];
 
     copy_v3_v3( old_loc, vert->co );
@@ -647,7 +647,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float ne
 		BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
 			float no[3];
 			float old_no[3];
-			
+
 			BM_face_calc_normal(f, no);
 
 			copy_v3_v3( old_no, BLI_buffer_at(&old_normals, Normal, i).no );
@@ -696,7 +696,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float ne
 			int num_cross = 0; //number of zero crossing edges
 			BM_ITER_ELEM (e, &iter_e, f, BM_EDGES_OF_FACE) {
 				if( e->v1 != vert && e->v2 != vert ){
-					int vert_i;		
+					int vert_i;
 					int edge_c_verts = 0;
 					for(vert_i = 0; vert_i < m_d->C_verts->count; vert_i++){
 						BMVert* C_vert = BLI_buffer_at(m_d->C_verts, BMVert*, vert_i);
@@ -714,7 +714,7 @@ static bool check_and_shift(BMVert *vert, const float new_loc[3], const float ne
 								num_cross++;
 							}
 						}
-					}  
+					}
 
 					if ( edge_c_verts >= 2 ){
 						//TODO if > 2 then we have added duplicate verts to C_verts, should not happen!
@@ -762,7 +762,7 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 			break;
 		}
 	}
-	
+
 	if( !found_vert ){
 		//We can't easily interpolate this edge, do not try to insert a new vertex here
 		printf("Couldn't find any suitable interpolation vertex!\n");
@@ -786,7 +786,7 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 		BMEdge *up, *down, *left, *right, *cur_edge;
 		BMFace *quadrants[4];
 
-		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert ); 
+		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert );
 		BMLoop *cur_loop = first_loop;
 
         cur_edge = vert->e;
@@ -819,43 +819,33 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 
 			get_uv_coord(cur_loop->next->v, face, &u, &v);
 
-			printf("New face\n");
-
 			// The BMLoop edge consist of the current vertex and the vertex in cur_loop->next->v
 			if( cur_loop->e == right ){
-				printf("right\n");
 				face_uv[ face_idx ][2][0] = u;
 				face_uv[ face_idx ][2][1] = v;
 			} else if( cur_loop->e == up ){
-				printf("up\n");
 				face_uv[ face_idx ][1][0] = u;
 				face_uv[ face_idx ][1][1] = v;
 			} else if( cur_loop->e == left ){
-				printf("left\n");
 				face_uv[ face_idx ][2][0] = u;
 				face_uv[ face_idx ][2][1] = v;
 			} else {
 				//down
-				printf("down\n");
 				face_uv[ face_idx ][1][0] = u;
 				face_uv[ face_idx ][1][1] = v;
 			}
 
 			get_uv_coord(cur_loop->prev->v, face, &u, &v);
 			if( cur_loop->prev->e == right ){
-				printf("right\n");
 				face_uv[ face_idx ][2][0] = u;
 				face_uv[ face_idx ][2][1] = v;
 			} else if( cur_loop->prev->e == up ){
-				printf("up\n");
 				face_uv[ face_idx ][1][0] = u;
 				face_uv[ face_idx ][1][1] = v;
 			} else if( cur_loop->prev->e == left ){
-				printf("left\n");
 				face_uv[ face_idx ][2][0] = u;
 				face_uv[ face_idx ][2][1] = v;
 			} else {
-				printf("down\n");
 				//down
 				face_uv[ face_idx ][1][0] = u;
 				face_uv[ face_idx ][1][1] = v;
@@ -911,8 +901,6 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 					}
 				}
 
-				printf("face_idx: %d\n", face_idx);
-
 				switch( face_idx ){
 					case 1 :
 						//2nd quadrant
@@ -959,19 +947,19 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 				interp_v2_v2v2( cur_ab, ab_start, ab_end, step);
 				if( cur_ab[0] < 0 ){
 					if( cur_ab[1] < 0 ){
-						q_idx = 2;		 
+						q_idx = 2;
 					} else {
-						q_idx = 1;		 
+						q_idx = 1;
 					}
 				} else {
 					if( cur_ab[1] < 0 ){
-						q_idx = 3;		 
+						q_idx = 3;
 					} else {
-						q_idx = 0;		 
+						q_idx = 0;
 					}
 				}
 
-				cur_face = quadrants[q_idx];		 
+				cur_face = quadrants[q_idx];
 
 				interp_v2_v2v2( uv_1, face_uv[q_idx][0], face_uv[q_idx][2], fabs(cur_ab[0]) );
 				interp_v2_v2v2( uv_2, face_uv[q_idx][0], face_uv[q_idx][1], fabs(cur_ab[1]) );
@@ -1048,17 +1036,6 @@ static void mult_face_search( BMFace *f, BMFace *f2, const float v1_uv[2], const
 				BMVert *vert = split_edge_and_move_vert(m_d->bm, e, P, du, dv);
 				append_vert(m_d->C_verts, vert);
 
-                if( BM_elem_index_get(vert) == 995 ){
-					printf("GOT PROBLEM VERT!!!\n");
-					printf("ab_start %f, %f\n", ab_start[0], ab_start[1] );
-					printf("ab_end %f, %f\n", ab_end[0], ab_end[1] );
-					printf("uv_P %f, %f\n", uv_P[0], uv_P[1] );
-					printf("face_uv 1: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[0][0][0], face_uv[0][0][1], face_uv[0][1][0], face_uv[0][1][1], face_uv[0][2][0], face_uv[0][2][1]);
-					printf("face_uv 2: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[1][0][0], face_uv[1][0][1], face_uv[1][1][0], face_uv[1][1][1], face_uv[1][2][0], face_uv[1][2][1]);
-					printf("face_uv 3: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[2][0][0], face_uv[2][0][1], face_uv[2][1][0], face_uv[2][1][1], face_uv[2][2][0], face_uv[2][2][1]);
-					printf("face_uv 4: 0: %f, %f 1: %f, %f 2: %f, %f\n", face_uv[3][0][0], face_uv[3][0][1], face_uv[3][1][0], face_uv[3][1][1], face_uv[3][2][0], face_uv[3][2][1]);
-				}
-
 				new_buf.orig_face = cur_face;
 				new_buf.orig_edge = NULL;
 				new_buf.u = uv_P[0];
@@ -1080,7 +1057,7 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 	int face_index = BM_elem_index_get(orig_face);
 
 	for( i = 0; i < 10; i++){
-		interp_v2_v2v2( uv_P, v1_uv, v2_uv, step);		
+		interp_v2_v2v2( uv_P, v1_uv, v2_uv, step);
 		openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
         face_dir = get_facing_dir(m_d->cam_loc, P, du, dv);
 
@@ -1097,7 +1074,7 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 		}
 		step_len = step_len/2.0f;
 	}
-	
+
 	cross_v3_v3v3(new_no, dv, du);
 	normalize_v3(new_no);
 
@@ -1122,7 +1099,7 @@ static bool bisect_search(const float v1_uv[2], const float v2_uv[2], BMEdge *e,
 			return false;
 		}
 	}
-	
+
 	copy_v2_v2(uv_result, uv_P);
 	{
 		BMVert *vert = split_edge_and_move_vert(m_d->bm, e, P, du, dv);
@@ -1136,7 +1113,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 	float v1_u, v1_v, v2_u, v2_v;
 	int orig_verts = BM_mesh_elem_count(m_d->bm_orig, BM_VERT);
 	int orig_edges = BM_mesh_elem_count(m_d->bm_orig, BM_EDGE);
-	int v1_idx = BM_elem_index_get(e->v1); 
+	int v1_idx = BM_elem_index_get(e->v1);
 	int v2_idx = BM_elem_index_get(e->v2);
 	Vert_buf v_buf1, v_buf2;
 	BMFace *f, *f2;
@@ -1152,7 +1129,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 			v1_has_face = true;
 		}
 	} else {
-		v1 = BM_vert_at_index_find( m_d->bm_orig, v1_idx ); 
+		v1 = BM_vert_at_index_find( m_d->bm_orig, v1_idx );
 	}
 	if( (v2_idx + 1) > orig_verts){
 		v_buf2 = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v2_idx - orig_verts);
@@ -1162,12 +1139,12 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 			v2_has_face = true;
 		}
 	} else {
-		v2 = BM_vert_at_index_find( m_d->bm_orig, v2_idx ); 
+		v2 = BM_vert_at_index_find( m_d->bm_orig, v2_idx );
 	}
 
 	if( v1 && v2 ){
 
-		if( i < orig_edges ){ 
+		if( i < orig_edges ){
 			//this edge is on the original mesh
 			BMIter iter_f;
 
@@ -1190,7 +1167,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 		get_uv_coord(v2, f, &v2_u, &v2_v);
 	} else if ( v1 ){
 		if( v2_has_face ){
-			f = v_buf2.orig_face; 
+			f = v_buf2.orig_face;
 		} else {
 			BMVert *vert_arr[3];
 
@@ -1208,7 +1185,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 		get_uv_coord(v1, f, &v1_u, &v1_v);
 	} else if ( v2 ){
 		if( v1_has_face ){
-			f = v_buf1.orig_face; 
+			f = v_buf1.orig_face;
 		} else {
 			BMVert *vert_arr[3];
 
@@ -1231,12 +1208,12 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 					diff_faces = true;
 					f2 = v_buf2.orig_face;
 				}
-				f = v_buf1.orig_face; 
+				f = v_buf1.orig_face;
 			} else if ( v1_has_face ) {
-				f = v_buf1.orig_face; 
+				f = v_buf1.orig_face;
 				convert_uv_to_new_face( v_buf2.orig_edge, f, &v2_u, &v2_v);
 			} else {
-				f = v_buf2.orig_face; 
+				f = v_buf2.orig_face;
 				convert_uv_to_new_face( v_buf1.orig_edge, f, &v1_u, &v2_v);
 			}
 		} else {
@@ -1272,7 +1249,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 			if(diff_faces){
 				if(vert2->orig_face != f2){
                     f2 = vert2->orig_face;
-				} 
+				}
 			} else if(vert2->orig_face != f) {
 				diff_faces = true;
 				f2 = vert2->orig_face;
@@ -1298,7 +1275,7 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 			//The edge spawns over multiple original edges, try to interpolate along this edge.
 			//If it fails, do not insert any new verts here
 			printf("Mult face search\n");
-			mult_face_search( f, f2, v1_uv, v2_uv, e, m_d ); 
+			mult_face_search( f, f2, v1_uv, v2_uv, e, m_d );
 			return;
 		}
 
@@ -1310,9 +1287,9 @@ static void search_edge( const int i, BMEdge *e, MeshData *m_d){
 			if( v1 && v2 ){
 				new_buf.orig_edge = orig_e;
 			} else if ( v1 ){
-				new_buf.orig_edge = v_buf2.orig_edge; 
+				new_buf.orig_edge = v_buf2.orig_edge;
 			} else {
-				new_buf.orig_edge = v_buf1.orig_edge; 
+				new_buf.orig_edge = v_buf1.orig_edge;
 			}
 
 		} else {
@@ -1376,7 +1353,7 @@ static void contour_insertion( MeshData *m_d ) {
 				if( e->v1 == C_vert || e->v2 == C_vert){
 					skip_edge = true;
 				}
-			}  
+			}
 
 			if(skip_edge) {
 				continue;
@@ -1409,7 +1386,7 @@ static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float ca
 		copy_v3_v3(cusp->cusp_no, cusp_no);
 		cusp->u = res_uv[0];
 		cusp->v = res_uv[1];
-		return true;		
+		return true;
 	}
 
 	bool normal_sign_cross(const bool bool_arr[3]){
@@ -1466,7 +1443,7 @@ static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float ca
 				//e1
 				float uv_1[] = {u_arr[0], v_arr[0]};
 				float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 				new_b = calc_if_B(cam_loc, new_co, du, dv);
@@ -1502,7 +1479,7 @@ static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float ca
 				//e3
 				float uv_1[] = {u_arr[2], v_arr[2]};
 				float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 				new_b = calc_if_B(cam_loc, new_co, du, dv);
@@ -1540,7 +1517,7 @@ static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float ca
 			//e2
 			float uv_1[] = {u_arr[0], v_arr[0]};
 			float uv_2[] = {u_arr[2], v_arr[2]};
-				
+
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 			new_b = calc_if_B(cam_loc, new_co, du, dv);
@@ -1577,7 +1554,7 @@ static bool cusp_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float ca
 			//e3
 			float uv_1[] = {u_arr[2], v_arr[2]};
 			float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 			new_b = calc_if_B(cam_loc, new_co, du, dv);
@@ -1640,17 +1617,17 @@ static BMFace *get_orig_face(BMesh *bm_orig, int orig_verts, const BMVert *vert_
 				vert_arr[i] = NULL;
 			} else {
 				//Make sure we don't pick one of the verts that we already have
-				int idx1 = BM_elem_index_get(v_buf.orig_edge->v1); 
+				int idx1 = BM_elem_index_get(v_buf.orig_edge->v1);
 				BMVert *temp_v1 = vert_arr[ mod_i(i-1, 3) ];
 				BMVert *temp_v2 = vert_arr[ mod_i(i+1, 3) ];
 
 				if( ( temp_v1 != NULL && idx1 != BM_elem_index_get(temp_v1) ) &&
 						( temp_v2 != NULL && idx1 != BM_elem_index_get(temp_v2) ) )
 				{
-					vert_arr[i] = v_buf.orig_edge->v1;							
+					vert_arr[i] = v_buf.orig_edge->v1;
 				} else {
 					//If v1 is a duplicate then v2 has to be unique
-					vert_arr[i] = v_buf.orig_edge->v2;							
+					vert_arr[i] = v_buf.orig_edge->v2;
 				}
 
 				edge_arr[i] = v_buf.orig_edge;
@@ -1774,7 +1751,7 @@ static void cusp_detection( MeshData *m_d ){
 							uv_1[0] = u_arr[0];
 							uv_2[0] = u_arr[2];
 							uv_3[0] = u_arr[1];
-                                   
+
 							uv_1[1] = v_arr[0];
 							uv_2[1] = v_arr[2];
 							uv_3[1] = v_arr[1];
@@ -1852,11 +1829,11 @@ static void cusp_detection( MeshData *m_d ){
 								v_buf.orig_face = NULL;
 							} else if( edge_uv[0] == 0 || edge_uv[0] == 1 || edge_uv[1] == 0 || edge_uv[1] == 1 ){
 								if( (v1_idx + 1) > orig_verts){
-									Vert_buf v_buf_old = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v1_idx - orig_verts);	
+									Vert_buf v_buf_old = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v1_idx - orig_verts);
 									v_buf.orig_edge = v_buf_old.orig_edge;
 									v_buf.orig_face = NULL;
 								} else if( (v2_idx + 1) > orig_verts) {
-									Vert_buf v_buf_old = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v2_idx - orig_verts);	
+									Vert_buf v_buf_old = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v2_idx - orig_verts);
 									v_buf.orig_edge = v_buf_old.orig_edge;
 									v_buf.orig_face = NULL;
 								}
@@ -1898,7 +1875,7 @@ static void cusp_detection( MeshData *m_d ){
 				}
 			}
 		}
-	}                                                     
+	}
 }
 
 static void cusp_insertion(MeshData *m_d){
@@ -1929,7 +1906,7 @@ static void cusp_insertion(MeshData *m_d){
 
 		vert = split_edge_and_move_cusp(m_d->bm, cusp.cusp_e, cusp.cusp_co, cusp.cusp_no);
 		append_vert(m_d->C_verts, vert);
-        
+
         new_buf.orig_face = cusp.orig_face;
 		new_buf.orig_edge = NULL;
 		new_buf.u = cusp.u;
@@ -1949,7 +1926,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 		uv[0] = ( u_arr[0] + u_arr[1] + u_arr[3] ) / 3.0f;
 		uv[1] = ( v_arr[0] + v_arr[1] + v_arr[3] ) / 3.0f;
 
-		return true;		
+		return true;
 	}
 
 	bool rad1_sign_cross(const bool bool_arr[3]){
@@ -2021,7 +1998,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 				//e1
 				float uv_1[] = {u_arr[0], v_arr[0]};
 				float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 				sub_v3_v3v3(temp, new_co, CC1_pos);
@@ -2058,7 +2035,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 				//e3
 				float uv_1[] = {u_arr[2], v_arr[2]};
 				float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 				interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 				openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 				sub_v3_v3v3(temp, new_co, CC1_pos);
@@ -2097,7 +2074,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 			//e2
 			float uv_1[] = {u_arr[0], v_arr[0]};
 			float uv_2[] = {u_arr[2], v_arr[2]};
-				
+
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 			sub_v3_v3v3(temp, new_co, CC1_pos);
@@ -2135,7 +2112,7 @@ static bool rad_triangle(struct OpenSubdiv_EvaluatorDescr *eval, const float rad
 			//e3
 			float uv_1[] = {u_arr[2], v_arr[2]};
 			float uv_2[] = {u_arr[1], v_arr[1]};
-				
+
 			interp_v2_v2v2( uv_co, uv_1, uv_2, 0.5f);
 			openSubdiv_evaluateLimit(eval, face_index, uv_co[0], uv_co[1], new_co, du, dv);
 			sub_v3_v3v3(temp, new_co, CC1_pos);
@@ -2212,7 +2189,7 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 			}
 		}
 	}
-	
+
     if( rot_edge ){
 		if( edge == NULL || !BM_edge_rotate_check(edge) ){
 			//Do not insert a radial edge here
@@ -2239,6 +2216,295 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 	return true;
 }
 
+//TODO less code duplication between this and mult_face_search
+static BMFace* mult_radi_search( BMFace *f, BMFace *f2, const float v1_uv[2], const float v2_uv[2], float uv_result[2],
+								 const float rad_plane_no[3], const float C_vert_pos[3], const float val_1, BMFace *poke_face, MeshData *m_d ){
+    //Try to find a vert that is connected to both faces
+	BMVert *vert;
+	BMFace *face;
+	BMIter iter_f, iter_v;
+	bool found_vert = false;
+
+	BM_ITER_ELEM (vert, &iter_v, f, BM_VERTS_OF_FACE) {
+		if( !BM_vert_is_boundary(vert) && BM_vert_edge_count(vert) == 4 && BM_vert_face_count(vert) == 4 ){
+			BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
+                if(face == f2){
+					found_vert = true;
+					break;
+				}
+			}
+		}
+		if(found_vert){
+			break;
+		}
+	}
+
+	if( !found_vert ){
+		//We can't easily interpolate this edge, do not try to insert a new vertex here
+		printf("Couldn't find any suitable interpolation vertex!\n");
+		return NULL;
+	}
+
+    //The vert we found is the center of our new 2d coordinate system "ab".
+	//Convert the uv coords to ab coords
+	{
+		//UV axis is the four quadrats, "+" is the selected vertex
+		//   b (up)
+		//   ^
+		// |2|1|
+		// --+--> a (right)
+		// |3|4|
+
+        // The uv points in the origin, up, right corner of the face
+		float face_uv[4][3][2];
+		float ab_start[2], ab_end[2];
+		int edge_idx = 0, face_idx = 0;
+		BMEdge *up, *down, *left, *right, *cur_edge;
+		BMFace *quadrants[4];
+
+		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert );
+		BMLoop *cur_loop = first_loop;
+
+        cur_edge = vert->e;
+
+		do {
+			switch(edge_idx){
+				case 0 : right = cur_edge;
+						 break;
+				case 1 : up = cur_edge;
+						 break;
+				case 2 : left = cur_edge;
+						 break;
+				default: down = cur_edge;
+						 break;
+			}
+			edge_idx++;
+		} while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_edge)) != first_loop) && (cur_loop != NULL));
+
+		do {
+			float u, v;
+			face = cur_loop->f;
+
+			//Save face for later use
+			quadrants[face_idx] = face;
+
+			get_uv_coord(vert, face, &u, &v);
+			face_uv[ face_idx ][0][0] = u;
+			face_uv[ face_idx ][0][1] = v;
+
+
+			get_uv_coord(cur_loop->next->v, face, &u, &v);
+
+			// The BMLoop edge consist of the current vertex and the vertex in cur_loop->next->v
+			if( cur_loop->e == right ){
+				face_uv[ face_idx ][2][0] = u;
+				face_uv[ face_idx ][2][1] = v;
+			} else if( cur_loop->e == up ){
+				face_uv[ face_idx ][1][0] = u;
+				face_uv[ face_idx ][1][1] = v;
+			} else if( cur_loop->e == left ){
+				face_uv[ face_idx ][2][0] = u;
+				face_uv[ face_idx ][2][1] = v;
+			} else {
+				//down
+				face_uv[ face_idx ][1][0] = u;
+				face_uv[ face_idx ][1][1] = v;
+			}
+
+			get_uv_coord(cur_loop->prev->v, face, &u, &v);
+			if( cur_loop->prev->e == right ){
+				face_uv[ face_idx ][2][0] = u;
+				face_uv[ face_idx ][2][1] = v;
+			} else if( cur_loop->prev->e == up ){
+				face_uv[ face_idx ][1][0] = u;
+				face_uv[ face_idx ][1][1] = v;
+			} else if( cur_loop->prev->e == left ){
+				face_uv[ face_idx ][2][0] = u;
+				face_uv[ face_idx ][2][1] = v;
+			} else {
+				//down
+				face_uv[ face_idx ][1][0] = u;
+				face_uv[ face_idx ][1][1] = v;
+			}
+
+			//Convert the supplied uv coords to ab coords
+			if( face == f || face == f2 ){
+				float a, b;
+
+				if( face == f ){
+					u = v1_uv[0];
+					v = v1_uv[1];
+				} else {
+					u = v2_uv[0];
+					v = v2_uv[1];
+				}
+
+				//Convert the u axis
+				if( face_uv[ face_idx ][0][0] == 0 ){
+					if( face_uv[ face_idx ][2][0] == 0 ){
+						//b coord is mapped to u
+						b = u;
+					} else {
+						//a coord is mapped to u
+						a = u;
+					}
+				} else {
+					if( face_uv[ face_idx ][2][0] == 0 ){
+						//a coord is mapped to u
+						a = 1.0f - u;
+					} else {
+						//b coord is mapped to u
+						b = 1.0f - u;
+					}
+				}
+
+				//Convert the v axis
+				if( face_uv[ face_idx ][0][1] == 0 ){
+					if( face_uv[ face_idx ][1][1] == 0 ){
+						//a coord is mapped to v
+						a = v;
+					} else {
+						//b coord is mapped to v
+						b = v;
+					}
+				} else {
+					if( face_uv[ face_idx ][1][1] == 0 ){
+						//b coord is mapped to v
+						b = 1.0f - v;
+					} else {
+						//a coord is mapped to v
+						a = 1.0f - v;
+					}
+				}
+
+				switch( face_idx ){
+					case 1 :
+						//2nd quadrant
+						a = -a;
+						break;
+					case 2 :
+						//3nd quadrant
+						a = -a;
+						b = -b;
+						break;
+					case 3 :
+						//4th quadrant
+						b = -b;
+						break;
+					default :
+						//1st quadrant
+						break;
+				}
+
+				//first or second face?
+				if( face == f ){
+					ab_start[0] = a;
+					ab_start[1] = b;
+				} else {
+					ab_end[0] = a;
+					ab_end[1] = b;
+				}
+
+			}
+			face_idx++;
+		} while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_edge)) != first_loop) && (cur_loop != NULL));
+
+		//Now we can begin interpolating along the edge
+		{
+			float search_val, uv_P[2], uv_1[2], uv_2[2],  P[3], du[3], dv[3], temp[3];
+			float step = 0.5f;
+			float step_len = 0.25f;
+			float cur_ab[2];
+			int i, face_index, q_idx;
+			int max_steps = 10;
+			BMFace *cur_face;
+
+			if(poke_face != NULL){
+				//Get mid point
+				max_steps = 1;
+			}
+
+			for( i = 0; i < max_steps; i++ ){
+				interp_v2_v2v2( cur_ab, ab_start, ab_end, step);
+				if( cur_ab[0] < 0 ){
+					if( cur_ab[1] < 0 ){
+						q_idx = 2;
+					} else {
+						q_idx = 1;
+					}
+				} else {
+					if( cur_ab[1] < 0 ){
+						q_idx = 3;
+					} else {
+						q_idx = 0;
+					}
+				}
+
+				cur_face = quadrants[q_idx];
+
+				interp_v2_v2v2( uv_1, face_uv[q_idx][0], face_uv[q_idx][2], fabs(cur_ab[0]) );
+				interp_v2_v2v2( uv_2, face_uv[q_idx][0], face_uv[q_idx][1], fabs(cur_ab[1]) );
+
+                if( face_uv[q_idx][0][0] == 1 ){
+					if( face_uv[q_idx][2][0] == 1 ){
+						uv_1[0] = 0;
+					}
+					if( face_uv[q_idx][1][0] == 1 ){
+						uv_2[0] = 0;
+					}
+				}
+
+                if( face_uv[q_idx][0][1] == 1 ){
+					if( face_uv[q_idx][2][1] == 1 ){
+						uv_1[1] = 0;
+					}
+					if( face_uv[q_idx][1][1] == 1 ){
+						uv_2[1] = 0;
+					}
+				}
+
+                add_v2_v2v2( uv_P, uv_1, uv_2 );
+
+				face_index = BM_elem_index_get(cur_face);
+				openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
+
+				sub_v3_v3v3(temp, P, C_vert_pos);
+				search_val = dot_v3v3(rad_plane_no, temp);
+
+				if( fabs(search_val) < 1e-14 ){
+					//We got lucky and found the zero crossing!
+					printf("got lucky\n");
+					break;
+				}
+
+				if( signf(search_val) == signf(val_1) ){
+					step += step_len;
+				} else {
+					step -= step_len;
+				}
+				step_len = step_len/2.0f;
+			}
+
+			if(poke_face != NULL){
+				Vert_buf v_buf;
+				v_buf.orig_edge = NULL;
+				v_buf.orig_face = cur_face;
+				v_buf.u = uv_P[0];
+				v_buf.v = uv_P[1];
+				if( poke_and_move(poke_face, P, du, dv, m_d) ){
+					BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
+				}
+			} else {
+				copy_v2_v2(uv_result, uv_P);
+			}
+
+			return cur_face;
+
+		}
+	}
+
+}
+
 static void radial_insertion( MeshData *m_d ){
 
 	int vert_i, vert_j;
@@ -2254,7 +2520,7 @@ static void radial_insertion( MeshData *m_d ){
 		BMIter iter_v;
 
 		BMVert *vert = BLI_buffer_at(m_d->C_verts, BMVert*, vert_i);
-        
+
 		int face_i;
 		int face_count = BM_vert_face_count(vert);
 		BMFace *face_arr[face_count];
@@ -2314,7 +2580,7 @@ static void radial_insertion( MeshData *m_d ){
 					sub_v3_v3v3(temp, co_arr[ mod_i(CC_idx-1, 3) ], co_arr[CC_idx]);
 
 					val_1 = dot_v3v3(rad_plane_no, temp);
-					
+
 					sub_v3_v3v3(temp, co_arr[ mod_i(CC_idx+1, 3) ], co_arr[CC_idx]);
 
 					val_2 = dot_v3v3(rad_plane_no, temp);
@@ -2340,17 +2606,18 @@ static void radial_insertion( MeshData *m_d ){
 					sub_v3_v3v3(temp, co_arr[ mod_i(CC2_idx-1, 3) ], co_arr[CC2_idx]);
 
 					val2_1 = dot_v3v3(rad_plane_no2, temp);
-					
+
 					sub_v3_v3v3(temp, co_arr[ mod_i(CC2_idx+1, 3) ], co_arr[CC2_idx]);
 
 					val2_2 = dot_v3v3(rad_plane_no2, temp);
 
 					if( signf(val2_1) != signf(val2_2) ){
-						//TODO handle this
+						//TODO Check if this really works
+						//TODO rewrite this to handle shifted verts
 						int face_index = BM_elem_index_get(orig_face);
 						float uv[2];
 						bool b_arr[3];
-                        
+
 						b_arr[mod_i(CC_idx-1, 3)] = (val_1 > 0);
 						b_arr[mod_i(CC_idx+1, 3)] = (val_2 > 0);
 						b_arr[CC_idx] = false;
@@ -2364,7 +2631,7 @@ static void radial_insertion( MeshData *m_d ){
 							v_buf.orig_face = orig_face;
 							v_buf.u = uv[0];
 							v_buf.v = uv[1];
-								
+
 							openSubdiv_evaluateLimit(m_d->eval, face_index, uv[0], uv[1], P, du, dv);
 							if( poke_and_move(f, P, du, dv, m_d) ){
 								BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
@@ -2373,6 +2640,125 @@ static void radial_insertion( MeshData *m_d ){
 							continue;
 						}
 					}
+				}
+
+                if( BM_mesh_elem_count(m_d->bm, BM_VERT) == 1122 ){
+					printf("---Problem vert:\n");
+					printf("uv1: %f, %f\n", u_arr[0], v_arr[0]);
+					printf("uv2: %f, %f\n", u_arr[1], v_arr[1]);
+					printf("uv3: %f, %f\n", u_arr[2], v_arr[2]);
+				}
+
+
+				{
+					int i;
+					bool diff_faces = false;
+					BMFace *faces[3];
+					//Check if the triangle has been shifted so we can't use the original face for UV coords
+                    for(i = 0; i < 3; i++){
+						Vert_buf* vert = get_shift_vert( vert_arr[i], m_d );
+						if( vert != NULL ){
+							//This vert has been shifted
+							if(vert->orig_face != orig_face){
+								//We have shifted this vert into an other face.
+                                //Now we have to interpolate on multiple faces
+								diff_faces = true;
+							}
+							faces[i] = vert->orig_face;
+							//Update to new uv pos
+							u_arr[i] = vert->u;
+							v_arr[i] = vert->v;
+						} else {
+							faces[i] = orig_face;
+						}
+					}
+
+					if( diff_faces ){
+                        int e1_idx = mod_i(CC_idx-1, 3);
+						int e2_idx = mod_i(CC_idx+1, 3);
+
+						BMFace *uv_face; 
+						float uv_P[2];
+                        
+
+						//Is only the C vert on a different face?
+						if( faces[e1_idx] == faces[e2_idx] ){
+							
+							int	face_index = BM_elem_index_get( faces[e1_idx] );
+							float du[3], dv[3], P[3];
+
+							float search_val;
+							float step = 0.5f;
+							float step_len = 0.25f;
+							float e1_uv[2] = { u_arr[e1_idx], v_arr[e1_idx] };
+							float e2_uv[2] = { u_arr[e2_idx], v_arr[e2_idx] };
+
+                            uv_face = faces[e1_idx];
+
+							//Get the intersection point of the radial plane on the edge
+							for( i = 0; i < 10; i++){
+								interp_v2_v2v2( uv_P, e1_uv, e2_uv, step);
+								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
+
+								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
+								search_val = dot_v3v3(rad_plane_no, temp);
+
+								if( fabs(search_val) < 1e-14 ){
+									//We got lucky and found the zero crossing!
+									printf("got lucky\n");
+									break;
+								}
+
+								if( signf(search_val) == signf(val_1) ){
+									step += step_len;
+								} else {
+									step -= step_len;
+								}
+								step_len = step_len/2.0f;
+							}
+						} else {
+							//Multiple face search
+							float e1_uv[2] = { u_arr[e1_idx], v_arr[e1_idx] };
+							float e2_uv[2] = { u_arr[e2_idx], v_arr[e2_idx] };
+							uv_face = mult_radi_search( faces[e1_idx], faces[e2_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, NULL, m_d);
+						}
+
+						if( uv_face == NULL ){
+							//Unable to calculate the radial edge
+							continue;
+						}
+
+						//Can we interpolate on just one face?
+                        if( uv_face == faces[CC_idx] ){
+						    float uv_mid[2] = { 0.5f * (uv_P[0] + u_arr[CC_idx]),
+                                                0.5f * (uv_P[1] + v_arr[CC_idx]) };
+							int	face_index = BM_elem_index_get(uv_face);
+							float du[3], dv[3], P[3];
+							openSubdiv_evaluateLimit(m_d->eval, face_index, uv_mid[0], uv_mid[1], P, du, dv);
+
+							{
+								Vert_buf v_buf;
+								v_buf.orig_edge = NULL;
+								v_buf.orig_face = uv_face;
+								v_buf.u = uv_mid[0];
+								v_buf.v = uv_mid[1];
+								if( poke_and_move(f, P, du, dv, m_d) ){
+									BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
+								}
+							}
+						} else {
+							float e1_uv[2];
+							float e2_uv[2] = { u_arr[CC_idx], v_arr[CC_idx] };
+
+                            copy_v2_v2( e1_uv, uv_P );
+
+							mult_radi_search( uv_face, faces[CC_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, f, m_d); 
+
+						}
+
+						continue;
+					}
+
 				}
 
 				{
@@ -2414,7 +2800,7 @@ static void radial_insertion( MeshData *m_d ){
 						float step_len = 0.25f;
 						if( signf(search_val) != signf(val_1) ){
 							for( i = 0; i < 10; i++){
-								interp_v2_v2v2( uv_P, edge1_mid, cent_uv, step);		
+								interp_v2_v2v2( uv_P, edge1_mid, cent_uv, step);
 								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
 
 								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
@@ -2434,7 +2820,6 @@ static void radial_insertion( MeshData *m_d ){
 								step_len = step_len/2.0f;
 							}
 							{
-								//TODO check for folds
 								Vert_buf v_buf;
 								v_buf.orig_edge = NULL;
 								v_buf.orig_face = orig_face;
@@ -2446,7 +2831,7 @@ static void radial_insertion( MeshData *m_d ){
 							}
 						} else {
 							for( i = 0; i < 10; i++){
-								interp_v2_v2v2( uv_P, edge2_mid, cent_uv, step);		
+								interp_v2_v2v2( uv_P, edge2_mid, cent_uv, step);
 								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
 
 								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
@@ -2466,7 +2851,6 @@ static void radial_insertion( MeshData *m_d ){
 								step_len = step_len/2.0f;
 							}
 							{
-								//TODO check for folds
 								Vert_buf v_buf;
 								v_buf.orig_edge = NULL;
 								v_buf.orig_face = orig_face;
@@ -2500,7 +2884,7 @@ static bool radial_C_vert(BMVert *v, int * const radi_start_idx, BLI_Buffer *C_v
 }
 
 static void radial_flip( MeshData *m_d ){
-	
+
 	bool done = false;
 
     while( !done ){
@@ -2529,7 +2913,7 @@ static void radial_flip( MeshData *m_d ){
 			} else {
 				edge_vert = e->v2;
 			}
-			
+
 			if( radial_C_vert( edge_vert, &(m_d->radi_start_idx), m_d->C_verts ) ){
                 //This is a radial or CC edge, do not try to flip it.
 				continue;
@@ -2547,7 +2931,7 @@ static void radial_flip( MeshData *m_d ){
 				//Check if we can just do a simple rotation that doesn't create any bad faces
 				BMLoop *l1, *l2;
                 BM_edge_calc_rotate(e, true, &l1, &l2);
-                
+
                 // new_v1 = l1->v;
                 // new_v2 = l2->v;
 
@@ -2559,7 +2943,7 @@ static void radial_flip( MeshData *m_d ){
 				}
 				//Check if the flip creates any folds or other troublesome geometry
 				//TODO perhaps need to check for folds manually?
-				//(Is the degenerate check enough or does a manual BM_face_point_inside_test(f, co); needed? ) 
+				//(Is the degenerate check enough or does a manual BM_face_point_inside_test(f, co); needed? )
 				//Returns true if not degenerate
 				if( BM_edge_rotate_check_degenerate(e, l1, l2) ){
 					//We can simply rotate it!
@@ -2569,7 +2953,7 @@ static void radial_flip( MeshData *m_d ){
 				}
 
 				printf("Try to dissolve vert!\n");
-				
+
 				{
 					int edge_count = BM_vert_edge_count(edge_vert);
 					BMEdge *cur_e = e;
@@ -2579,7 +2963,7 @@ static void radial_flip( MeshData *m_d ){
                     BMEdge *rad1_edge = BM_edge_exists(l1->v, edge_vert);
                     BMEdge *rad2_edge = BM_edge_exists(l2->v, edge_vert);
 
-                    BMLoop *first_loop = BM_face_vert_share_loop( cur_e->l->f, edge_vert); 
+                    BMLoop *first_loop = BM_face_vert_share_loop( cur_e->l->f, edge_vert);
                     BMLoop *cur_loop = first_loop;
 
                     if( edge_count - 3 < 1 ){
@@ -2590,7 +2974,7 @@ static void radial_flip( MeshData *m_d ){
 						printf("Couldn't find the edges connected to the radial vert! (dissolve vert)\n");
 						continue;
 					}
-					
+
 					if( cur_loop == NULL ){
 						printf("Couldn't find face loop!\n");
 					}
@@ -2604,7 +2988,7 @@ static void radial_flip( MeshData *m_d ){
 						edge_idx++;
 
 					}
-					
+
 					if(cur_loop == NULL){
 						continue;
 					}
@@ -2713,7 +3097,7 @@ static void optimization( MeshData *m_d ){
 						IncoFace inface;
 						inface.face = face;
 						inface.back_f = b_f;
-						face->mat_nr = 4;	
+						face->mat_nr = 4;
 						BLI_buffer_append(&inco_faces, IncoFace, inface);
 					}
 
@@ -2723,7 +3107,7 @@ static void optimization( MeshData *m_d ){
 		}
 	}
 	// 1. Radial edge extension
-	
+
 	// 2. Edge flipping
 	{
 		int face_i;
@@ -2740,7 +3124,7 @@ static void optimization( MeshData *m_d ){
 			}
 
 			BM_ITER_ELEM (edge, &iter_e, inface->face, BM_EDGES_OF_FACE) {
-				
+
                 if( !BM_edge_rotate_check(edge) ){
 					continue;
 				}
@@ -2840,7 +3224,7 @@ static void optimization( MeshData *m_d ){
 			BM_ITER_ELEM (vert, &iter_v, inface->face, BM_VERTS_OF_FACE) {
 				if( BM_elem_index_get(vert) < m_d->radi_start_idx ){
 					//Not a radial vert, see if we can dissolve it to improve the consistency
-					
+
                     if( BM_vert_edge_count(vert) == 3 && BM_vert_face_count(vert) == 3 ){
 						float vec1[3], vec2[3], P[3], no[3];
 						BMLoop *l1, *l2;
@@ -2848,7 +3232,7 @@ static void optimization( MeshData *m_d ){
 						BM_edge_calc_rotate(vert->e, true, &l1, &l2);
 
 						BM_edge_ordered_verts(vert->e, &v1, &v2);
-						
+
 						if( vert == v1 ){
 							sub_v3_v3v3(vec1, v2->co, l1->v->co);
 							sub_v3_v3v3(vec2, v2->co, l2->v->co);
@@ -2926,7 +3310,7 @@ static void optimization( MeshData *m_d ){
 					float old_pos[3], co[3], co2[2];
                     int i = 0;
 					bool done = true;
-                    
+
 					BMEdge *edge;
 					BMIter iter_e;
 
@@ -2981,9 +3365,9 @@ static void optimization( MeshData *m_d ){
 	}
 
 	// 3. Vertex wiggling in paramter space
-	
+
 	// 4. Edge Splitting
-	
+
 	// 5. Vertex wiggling in normal direction
 	{
 		int face_i;
@@ -3016,7 +3400,7 @@ static void optimization( MeshData *m_d ){
 					}
 
                     len = len / (float)(i*2);
-					
+
 					for( i = 0; i < 100; i++ ){
 						BMFace *face;
 						BMIter iter_f;
@@ -3137,7 +3521,7 @@ static void debug_colorize_radi( MeshData *m_d ){
 
 	int vert_i;
 	for(vert_i = 0; vert_i < m_d->C_verts->count; vert_i++){
-		BMVert *vert = BLI_buffer_at(m_d->C_verts, BMVert*, vert_i); 
+		BMVert *vert = BLI_buffer_at(m_d->C_verts, BMVert*, vert_i);
 
 		BM_ITER_ELEM (e, &iter_e, vert, BM_EDGES_OF_VERT) {
             BMVert *edge_vert;
@@ -3178,7 +3562,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
     struct OpenSubdiv_EvaluatorDescr *osd_eval;
 
 	bm = DM_to_bmesh(dm, true);
-	
+
 	//TODO use this to check if we need to subdivide the mesh to get a quad mesh.
 	{
 		BMIter iter;
@@ -3209,7 +3593,7 @@ static DerivedMesh *mybmesh_do(DerivedMesh *dm, MyBMeshModifierData *mmd, float 
 
 	//Keep a copy of the original mesh
 	bm_orig = DM_to_bmesh(dm, true);
-    
+
     osd_eval = create_osd_eval(bm);
 
 	// (6.1) Initialization
