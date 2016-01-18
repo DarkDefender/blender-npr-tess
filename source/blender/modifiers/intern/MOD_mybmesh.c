@@ -2622,6 +2622,8 @@ static void radial_insertion( MeshData *m_d ){
 				}
 
 				//get uv coord and orig face
+				//TODO rewrite get_orig_face to handle shifted verts.
+				//Or just rewrite it in here and leave get_orig_face alone
 			    orig_face = get_orig_face(orig_verts, vert_arr, u_arr, v_arr, co_arr, m_d);
 				if( CC2_idx != -1 ){
 					//This face has an CC edge
@@ -2691,6 +2693,32 @@ static void radial_insertion( MeshData *m_d ){
 							u_arr[i] = vert->u;
 							v_arr[i] = vert->v;
 						} else {
+                            //Check if edge verts doesn't belong to orig_face
+							int v_idx = BM_elem_index_get(vert_arr[i]);
+							if( (v_idx + 1) > orig_verts){
+								Vert_buf v_buf = BLI_buffer_at(m_d->new_vert_buffer, Vert_buf, v_idx - orig_verts);
+								if( v_buf.orig_edge != NULL ){
+									BMIter iter_f;
+									BMFace *face;
+									bool found_face = false;
+
+									//TODO try to find a edge face that is next to orig_face if none of them is orig_face
+									BM_ITER_ELEM (face, &iter_f, v_buf.orig_edge, BM_FACES_OF_EDGE){
+                                        if(face == orig_face){
+											found_face = true;
+											break;
+										}
+									}
+
+									if(!found_face){
+										faces[i] = v_buf.orig_face;
+										u_arr[i] = v_buf.u;
+										v_arr[i] = v_buf.v;
+										diff_faces = true;
+										continue;
+									}
+								}
+							}
 							faces[i] = orig_face;
 						}
 					}
@@ -2745,40 +2773,40 @@ static void radial_insertion( MeshData *m_d ){
 							uv_face = mult_radi_search( faces[e1_idx], faces[e2_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, NULL, m_d);
 						}
 
+						if( uv_face != NULL ){
+							//Can we interpolate on just one face?
+							if( uv_face == faces[CC_idx] ){
+								float uv_mid[2] = { 0.5f * (uv_P[0] + u_arr[CC_idx]),
+									0.5f * (uv_P[1] + v_arr[CC_idx]) };
+								int	face_index = BM_elem_index_get(uv_face);
+								float du[3], dv[3], P[3];
+								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_mid[0], uv_mid[1], P, du, dv);
+
+								{
+									Vert_buf v_buf;
+									v_buf.orig_edge = NULL;
+									v_buf.orig_face = uv_face;
+									v_buf.u = uv_mid[0];
+									v_buf.v = uv_mid[1];
+									if( poke_and_move(f, P, du, dv, m_d) ){
+										BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
+									}
+								}
+							} else {
+								float e1_uv[2];
+								float e2_uv[2] = { u_arr[CC_idx], v_arr[CC_idx] };
+
+								copy_v2_v2( e1_uv, uv_P );
+
+								uv_face = mult_radi_search( uv_face, faces[CC_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, f, m_d); 
+							}
+						}
+
 						if( uv_face == NULL ){
-							//Unable to calculate the radial edge
+							orig_face = get_orig_face(orig_verts, vert_arr, u_arr, v_arr, co_arr, m_d);
+						} else {
 							continue;
 						}
-
-						//Can we interpolate on just one face?
-                        if( uv_face == faces[CC_idx] ){
-						    float uv_mid[2] = { 0.5f * (uv_P[0] + u_arr[CC_idx]),
-                                                0.5f * (uv_P[1] + v_arr[CC_idx]) };
-							int	face_index = BM_elem_index_get(uv_face);
-							float du[3], dv[3], P[3];
-							openSubdiv_evaluateLimit(m_d->eval, face_index, uv_mid[0], uv_mid[1], P, du, dv);
-
-							{
-								Vert_buf v_buf;
-								v_buf.orig_edge = NULL;
-								v_buf.orig_face = uv_face;
-								v_buf.u = uv_mid[0];
-								v_buf.v = uv_mid[1];
-								if( poke_and_move(f, P, du, dv, m_d) ){
-									BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
-								}
-							}
-						} else {
-							float e1_uv[2];
-							float e2_uv[2] = { u_arr[CC_idx], v_arr[CC_idx] };
-
-                            copy_v2_v2( e1_uv, uv_P );
-
-							mult_radi_search( uv_face, faces[CC_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, f, m_d); 
-
-						}
-
-						continue;
 					}
 
 				}
@@ -2908,6 +2936,8 @@ static bool radial_C_vert(BMVert *v, int * const radi_start_idx, BLI_Buffer *C_v
 static void radial_flip( MeshData *m_d ){
 
 	bool done = false;
+
+	int iter = 0;
 
     while( !done ){
 
@@ -3077,10 +3107,10 @@ static void radial_flip( MeshData *m_d ){
 		}
 	}
 
-	if(flips == 0){
+	if(flips == 0 || iter > 5){
 		done = true;
 	}
-
+    iter++;
 	}
 }
 
