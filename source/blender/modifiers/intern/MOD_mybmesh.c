@@ -2246,22 +2246,42 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 	return true;
 }
 
-//TODO less code duplication between this and mult_face_search
-static BMFace* mult_radi_search( BMFace *f, BMFace *f2, const float v1_uv[2], const float v2_uv[2], float uv_result[2],
-								 const float rad_plane_no[3], const float C_vert_pos[3], const float val_1, BMFace *poke_face, MeshData *m_d ){
+static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const float edge1_mid[3], const float edge2_mid[3],
+							  const float val_1, const float val_2,
+							  const float rad_plane_no[3], const float C_vert_pos[3], BMFace *poke_face, MeshData *m_d ){
     //Try to find a vert that is connected to both faces
 	BMVert *vert;
 	BMFace *face;
 	BMIter iter_f, iter_v;
+	int edge_count, f_idx;
 	bool found_vert = false;
 
-	BM_ITER_ELEM (vert, &iter_v, f, BM_VERTS_OF_FACE) {
-		if( !BM_vert_is_boundary(vert) && BM_vert_edge_count(vert) == 4 && BM_vert_face_count(vert) == 4 ){
-			BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
-                if(face == f2){
-					found_vert = true;
-					break;
+	for(f_idx = 0; f_idx < 3; f_idx++){
+		BMFace *f = diff_f[f_idx];
+		BM_ITER_ELEM (vert, &iter_v, f, BM_VERTS_OF_FACE) {
+			if( !BM_vert_is_boundary(vert) && BM_vert_edge_count(vert) == BM_vert_face_count(vert) ){
+				bool e1 = false;
+				bool e2 = false;
+				bool f_cent = false;
+				BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
+					if( BM_face_point_inside_test(face, edge1_mid) ){
+						e1 = true;
+					}
+					if( BM_face_point_inside_test(face, edge2_mid) ){
+						e2 = true;
+					}
+					if( BM_face_point_inside_test(face, cent) ){
+						f_cent = true;
+					}
+					if(e1 && e2 && f_cent){
+						edge_count = BM_vert_edge_count(vert);
+						found_vert = true;
+						break;
+					}
 				}
+			}
+			if(found_vert){
+				break;
 			}
 		}
 		if(found_vert){
@@ -2272,265 +2292,213 @@ static BMFace* mult_radi_search( BMFace *f, BMFace *f2, const float v1_uv[2], co
 	if( !found_vert ){
 		//We can't easily interpolate this edge, do not try to insert a new vertex here
 		printf("Couldn't find any suitable interpolation vertex!\n");
-		return NULL;
+		return;
 	}
 
-    //The vert we found is the center of our new 2d coordinate system "ab".
-	//Convert the uv coords to ab coords
 	{
-		//UV axis is the four quadrats, "+" is the selected vertex
-		//   b (up)
-		//   ^
-		// |2|1|
-		// --+--> a (right)
-		// |3|4|
-
-        // The uv points in the origin, up, right corner of the face
-		float face_uv[4][3][2];
-		float ab_start[2], ab_end[2];
-		int edge_idx = 0, face_idx = 0;
-		BMEdge *up, *down, *left, *right, *cur_edge;
-		BMFace *quadrants[4];
+		int edge_idx = 0;
+		float mat[3][3];
 
 		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert );
 		BMLoop *cur_loop = first_loop;
+		BMEdge *cur_edge;
+		BMFace *faces[edge_count];
 
+		axis_dominant_v3_to_m3(mat, vert->no);
         cur_edge = vert->e;
-
+        
 		do {
-			switch(edge_idx){
-				case 0 : right = cur_edge;
-						 break;
-				case 1 : up = cur_edge;
-						 break;
-				case 2 : left = cur_edge;
-						 break;
-				default: down = cur_edge;
-						 break;
-			}
+			faces[edge_idx] = cur_loop->f;
 			edge_idx++;
 		} while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_edge)) != first_loop) && (cur_loop != NULL));
 
-		do {
-			float u, v;
-			face = cur_loop->f;
-
-			//Save face for later use
-			quadrants[face_idx] = face;
-
-			get_uv_coord(vert, face, &u, &v);
-			face_uv[ face_idx ][0][0] = u;
-			face_uv[ face_idx ][0][1] = v;
-
-
-			get_uv_coord(cur_loop->next->v, face, &u, &v);
-
-			// The BMLoop edge consist of the current vertex and the vertex in cur_loop->next->v
-			if( cur_loop->e == right ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else if( cur_loop->e == up ){
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			} else if( cur_loop->e == left ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else {
-				//down
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			}
-
-			get_uv_coord(cur_loop->prev->v, face, &u, &v);
-			if( cur_loop->prev->e == right ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else if( cur_loop->prev->e == up ){
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			} else if( cur_loop->prev->e == left ){
-				face_uv[ face_idx ][2][0] = u;
-				face_uv[ face_idx ][2][1] = v;
-			} else {
-				//down
-				face_uv[ face_idx ][1][0] = u;
-				face_uv[ face_idx ][1][1] = v;
-			}
-
-			//Convert the supplied uv coords to ab coords
-			if( face == f || face == f2 ){
-				float a, b;
-
-				if( face == f ){
-					u = v1_uv[0];
-					v = v1_uv[1];
-				} else {
-					u = v2_uv[0];
-					v = v2_uv[1];
-				}
-
-				//Convert the u axis
-				if( face_uv[ face_idx ][0][0] == 0 ){
-					if( face_uv[ face_idx ][2][0] == 0 ){
-						//b coord is mapped to u
-						b = u;
-					} else {
-						//a coord is mapped to u
-						a = u;
-					}
-				} else {
-					if( face_uv[ face_idx ][2][0] == 0 ){
-						//a coord is mapped to u
-						a = 1.0f - u;
-					} else {
-						//b coord is mapped to u
-						b = 1.0f - u;
-					}
-				}
-
-				//Convert the v axis
-				if( face_uv[ face_idx ][0][1] == 0 ){
-					if( face_uv[ face_idx ][1][1] == 0 ){
-						//a coord is mapped to v
-						a = v;
-					} else {
-						//b coord is mapped to v
-						b = v;
-					}
-				} else {
-					if( face_uv[ face_idx ][1][1] == 0 ){
-						//b coord is mapped to v
-						b = 1.0f - v;
-					} else {
-						//a coord is mapped to v
-						a = 1.0f - v;
-					}
-				}
-
-				switch( face_idx ){
-					case 1 :
-						//2nd quadrant
-						a = -a;
-						break;
-					case 2 :
-						//3nd quadrant
-						a = -a;
-						b = -b;
-						break;
-					case 3 :
-						//4th quadrant
-						b = -b;
-						break;
-					default :
-						//1st quadrant
-						break;
-				}
-
-				//first or second face?
-				if( face == f ){
-					ab_start[0] = a;
-					ab_start[1] = b;
-				} else {
-					ab_end[0] = a;
-					ab_end[1] = b;
-				}
-
-			}
-			face_idx++;
-		} while (((cur_loop = BM_vert_step_fan_loop(cur_loop, &cur_edge)) != first_loop) && (cur_loop != NULL));
-
-		//Now we can begin interpolating along the edge
+		//Find the faces for our three points
 		{
-			float search_val, uv_P[2], uv_1[2], uv_2[2],  P[3], du[3], dv[3], temp[3];
-			float step = 0.5f;
-			float step_len = 0.25f;
-			float cur_ab[2];
-			int i, face_index, q_idx;
-			int max_steps = 10;
-			BMFace *cur_face;
+			int i, j;
+            float uvs[3][2];
+			BMFace *face_ids[3];
+			float rad_dir[3]; 
+			int search_id;
 
-			if(poke_face != NULL){
-				//Get mid point
-				max_steps = 1;
+            rad_dir[1] = signf(val_1);
+			rad_dir[2] = signf(val_2);
+
+			for ( i = 0; i < edge_count; i++) {
+				for ( j = 0; j < 3; j++) {
+                    float point[3];
+					switch(j){
+						case 1 : copy_v3_v3(point, edge1_mid);
+								 break;
+						case 2 : copy_v3_v3(point, edge2_mid);
+								 break;
+						default: copy_v3_v3(point, cent);
+								 break;
+					}
+		            
+					if( BM_face_point_inside_test(faces[i], point) ){
+						int vert_idx;
+						float st[4][2];
+						float point_v2[2];
+						float P[3], du[3], dv[3], temp[3];
+						BMVert *v;
+						BM_ITER_ELEM_INDEX (v, &iter_v, faces[i], BM_VERTS_OF_FACE, vert_idx) {
+							switch(vert_idx){
+								case 1 : mul_v2_m3v3(st[1], mat, v->co);
+										 break;
+								case 2 : mul_v2_m3v3(st[2], mat, v->co);
+										 break;
+								case 3 : mul_v2_m3v3(st[3], mat, v->co);
+										 break;
+								default: mul_v2_m3v3(st[0], mat, v->co);
+										 break;
+							}
+						}
+
+                        mul_v2_m3v3(point_v2, mat, point);
+
+                        resolve_quad_uv_v2(uvs[j], point_v2, st[0], st[1], st[2], st[3]);
+
+						if( j == 0 ){
+							//Save rad_dir for cent
+							face_ids[j] = faces[i];
+							openSubdiv_evaluateLimit(m_d->eval, BM_elem_index_get(face_ids[j]), uvs[j][0], uvs[j][1], P, du, dv);
+
+							sub_v3_v3v3(temp, P, C_vert_pos);
+							rad_dir[j] = signf(dot_v3v3(rad_plane_no, temp));
+						}
+					}
+				}
+			}
+            if( rad_dir[0] == rad_dir[1] ){
+				search_id = 2;
+			} else {
+				search_id = 1;
 			}
 
-			for( i = 0; i < max_steps; i++ ){
-				interp_v2_v2v2( cur_ab, ab_start, ab_end, step);
-				if( cur_ab[0] < 0 ){
-					if( cur_ab[1] < 0 ){
-						q_idx = 2;
-					} else {
-						q_idx = 1;
-					}
-				} else {
-					if( cur_ab[1] < 0 ){
-						q_idx = 3;
-					} else {
-						q_idx = 0;
-					}
-				}
-
-				cur_face = quadrants[q_idx];
-
-				interp_v2_v2v2( uv_1, face_uv[q_idx][0], face_uv[q_idx][2], fabs(cur_ab[0]) );
-				interp_v2_v2v2( uv_2, face_uv[q_idx][0], face_uv[q_idx][1], fabs(cur_ab[1]) );
-
-                if( face_uv[q_idx][0][0] == 1 ){
-					if( face_uv[q_idx][2][0] == 1 ){
-						uv_1[0] = 0;
-					}
-					if( face_uv[q_idx][1][0] == 1 ){
-						uv_2[0] = 0;
-					}
-				}
-
-                if( face_uv[q_idx][0][1] == 1 ){
-					if( face_uv[q_idx][2][1] == 1 ){
-						uv_1[1] = 0;
-					}
-					if( face_uv[q_idx][1][1] == 1 ){
-						uv_2[1] = 0;
-					}
-				}
-
-                add_v2_v2v2( uv_P, uv_1, uv_2 );
-
-				face_index = BM_elem_index_get(cur_face);
-				openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
-
-				sub_v3_v3v3(temp, P, C_vert_pos);
-				search_val = dot_v3v3(rad_plane_no, temp);
-
-				if( fabs(search_val) < 1e-14 ){
-					//We got lucky and found the zero crossing!
-					printf("got lucky\n");
-					break;
-				}
-
-				if( signf(search_val) == signf(val_1) ){
-					step += step_len;
-				} else {
-					step -= step_len;
-				}
-				step_len = step_len/2.0f;
-			}
-
-			if(poke_face != NULL){
+			{
+				float search_val, uv_P[2], P[3], du[3], dv[3], temp[3];
+				float step = 0.5f;
+				float step_len = 0.25f;
+				int i, face_index;
+				BMFace *orig_face;
 				Vert_buf v_buf;
+                /*
+                print_v3("cent", cent);
+				print_v3("edge1_mid", edge1_mid);
+				print_v3("edge2_mid", edge2_mid);
+				print_v3("rad_dir", rad_dir);
+				print_v2("UV_cent", uvs[0]);
+				print_v2("UV_edge1", uvs[1]);
+				print_v2("UV_edge2", uvs[2]);
+                */
+				if( face_ids[0] == face_ids[search_id] ){
+					//We can work in pure uv space
+                    //printf("UV space\n");
+					orig_face = face_ids[0];
+					face_index = BM_elem_index_get(face_ids[0]);
+					for( i = 0; i < 10; i++ ){
+						interp_v2_v2v2( uv_P, uvs[0], uvs[search_id], step);
+						openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
+
+						sub_v3_v3v3(temp, P, C_vert_pos);
+						search_val = dot_v3v3(rad_plane_no, temp);
+
+						if( fabs(search_val) < 1e-14 ){
+							//We got lucky and found the zero crossing!
+							printf("got lucky\n");
+							break;
+						}
+
+						if( signf(search_val) == rad_dir[0] ){
+							step += step_len;
+						} else {
+							step -= step_len;
+						}
+						step_len = step_len/2.0f;
+					}
+				} else {
+                    //Work in coord space
+					float cur_p[3], p[3];
+					int j;
+					float prev_val = 0;
+
+					//printf("Coord space\n");
+					if( search_id == 1 ){
+						copy_v3_v3(p, edge1_mid);
+					} else {
+						copy_v3_v3(p, edge2_mid);
+					}
+
+					for( i = 0; i < 20; i++ ){
+						interp_v3_v3v3(cur_p, cent, p, step);
+
+						for ( j = 0; j < edge_count; j++) {
+							if( BM_face_point_inside_test(faces[j], cur_p) ){
+								int vert_idx;
+								float st[4][2];
+								float point_v2[2];
+								BMVert *v;
+								BM_ITER_ELEM_INDEX (v, &iter_v, faces[j], BM_VERTS_OF_FACE, vert_idx) {
+									switch(vert_idx){
+										case 1 : mul_v2_m3v3(st[1], mat, v->co);
+												 break;
+										case 2 : mul_v2_m3v3(st[2], mat, v->co);
+												 break;
+										case 3 : mul_v2_m3v3(st[3], mat, v->co);
+												 break;
+										default: mul_v2_m3v3(st[0], mat, v->co);
+												 break;
+									}
+								}
+								mul_v2_m3v3(point_v2, mat, cur_p);
+
+								resolve_quad_uv_v2(uv_P, point_v2, st[0], st[1], st[2], st[3]);
+
+								orig_face = faces[j];
+								face_index = BM_elem_index_get(faces[j]);
+								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
+
+								break;
+							}
+						}
+
+						sub_v3_v3v3(temp, P, C_vert_pos);
+						search_val = dot_v3v3(rad_plane_no, temp);
+
+						if( fabs(search_val) < 1e-14 ){
+							//We got lucky and found the zero crossing!
+							printf("got lucky\n");
+							break;
+						}
+
+                        search_val = signf(search_val);
+
+						if( search_val == rad_dir[0] ){
+							step += step_len;
+						} else {
+							step -= step_len;
+						}
+
+						if( !(prev_val == 0) && prev_val != search_val ){
+							//Because we are interpolating in coordinate space (and using the limit surface to get new points)
+							//we need to be able to go beyond 0 and 1 (so the final point could be at 1.2 etc...)
+							step_len = step_len/2.0f;
+						}
+						prev_val = search_val;
+					}
+				}
+
 				v_buf.orig_edge = NULL;
-				v_buf.orig_face = cur_face;
+				v_buf.orig_face = orig_face;
 				v_buf.u = uv_P[0];
 				v_buf.v = uv_P[1];
 				if( poke_and_move(poke_face, P, du, dv, m_d) ){
 					BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
 				}
-			} else {
-				copy_v2_v2(uv_result, uv_P);
 			}
 
-			return cur_face;
-
 		}
+
 	}
 
 }
@@ -2554,6 +2522,12 @@ static void radial_insertion( MeshData *m_d ){
 		int face_i;
 		int face_count = BM_vert_face_count(vert);
 		BMFace *face_arr[face_count];
+
+		/*
+        if( BM_elem_index_get(vert) != 1051 ){
+			continue;
+		}
+		*/
 
 		BM_ITER_ELEM_INDEX (f, &iter_f, vert, BM_FACES_OF_VERT, face_i) {
 			face_arr[face_i] = f;
@@ -2723,90 +2697,19 @@ static void radial_insertion( MeshData *m_d ){
 						}
 					}
 
-					if( diff_faces ){
-                        int e1_idx = mod_i(CC_idx-1, 3);
-						int e2_idx = mod_i(CC_idx+1, 3);
+					if( true ){
+						//This search will spawn multiple faces, we must use coordinate space to do this.
+						float cent[3];
+						float edge1_mid[3];
+						float edge2_mid[3];
+						BMFace *face_idx1,*face_idx2;
+						interp_v3_v3v3(edge1_mid, co_arr[CC_idx], co_arr[ mod_i(CC_idx-1, 3) ], 0.5f);
+						interp_v3_v3v3(edge2_mid, co_arr[CC_idx], co_arr[ mod_i(CC_idx+1, 3) ], 0.5f);
+						cent_tri_v3(cent, co_arr[0], co_arr[1], co_arr[2]);
 
-						BMFace *uv_face; 
-						float uv_P[2];
-                        
-
-						//Is only the C vert on a different face?
-						if( faces[e1_idx] == faces[e2_idx] ){
-							
-							int	face_index = BM_elem_index_get( faces[e1_idx] );
-							float du[3], dv[3], P[3];
-
-							float search_val;
-							float step = 0.5f;
-							float step_len = 0.25f;
-							float e1_uv[2] = { u_arr[e1_idx], v_arr[e1_idx] };
-							float e2_uv[2] = { u_arr[e2_idx], v_arr[e2_idx] };
-
-                            uv_face = faces[e1_idx];
-
-							//Get the intersection point of the radial plane on the edge
-							for( i = 0; i < 10; i++){
-								interp_v2_v2v2( uv_P, e1_uv, e2_uv, step);
-								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_P[0], uv_P[1], P, du, dv);
-
-								sub_v3_v3v3(temp, P, co_arr[CC_idx]);
-								search_val = dot_v3v3(rad_plane_no, temp);
-
-								if( fabs(search_val) < 1e-14 ){
-									//We got lucky and found the zero crossing!
-									printf("got lucky\n");
-									break;
-								}
-
-								if( signf(search_val) == signf(val_1) ){
-									step += step_len;
-								} else {
-									step -= step_len;
-								}
-								step_len = step_len/2.0f;
-							}
-						} else {
-							//Multiple face search
-							float e1_uv[2] = { u_arr[e1_idx], v_arr[e1_idx] };
-							float e2_uv[2] = { u_arr[e2_idx], v_arr[e2_idx] };
-							uv_face = mult_radi_search( faces[e1_idx], faces[e2_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, NULL, m_d);
-						}
-
-						if( uv_face != NULL ){
-							//Can we interpolate on just one face?
-							if( uv_face == faces[CC_idx] ){
-								float uv_mid[2] = { 0.5f * (uv_P[0] + u_arr[CC_idx]),
-									0.5f * (uv_P[1] + v_arr[CC_idx]) };
-								int	face_index = BM_elem_index_get(uv_face);
-								float du[3], dv[3], P[3];
-								openSubdiv_evaluateLimit(m_d->eval, face_index, uv_mid[0], uv_mid[1], P, du, dv);
-
-								{
-									Vert_buf v_buf;
-									v_buf.orig_edge = NULL;
-									v_buf.orig_face = uv_face;
-									v_buf.u = uv_mid[0];
-									v_buf.v = uv_mid[1];
-									if( poke_and_move(f, P, du, dv, m_d) ){
-										BLI_buffer_append(m_d->new_vert_buffer, Vert_buf, v_buf);
-									}
-								}
-							} else {
-								float e1_uv[2];
-								float e2_uv[2] = { u_arr[CC_idx], v_arr[CC_idx] };
-
-								copy_v2_v2( e1_uv, uv_P );
-
-								uv_face = mult_radi_search( uv_face, faces[CC_idx], e1_uv, e2_uv, uv_P, rad_plane_no, co_arr[CC_idx], val_1, f, m_d); 
-							}
-						}
-
-						if( uv_face == NULL ){
-							orig_face = get_orig_face(orig_verts, vert_arr, u_arr, v_arr, co_arr, m_d);
-						} else {
-							continue;
-						}
+						printf("Diff faces\n");
+						mult_radi_search(faces, cent, edge1_mid, edge2_mid, val_1, val_2, rad_plane_no, co_arr[CC_idx], f, m_d);
+						continue;
 					}
 
 				}
