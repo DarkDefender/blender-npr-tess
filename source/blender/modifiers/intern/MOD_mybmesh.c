@@ -2197,21 +2197,44 @@ static bool is_C_vert(BMVert *v, BLI_Buffer *C_verts){
 
 static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
 	BMVert *vert;
-    BMEdge *edge = NULL;
-    bool rot_edge = false;
+	BMIter iter_v;
+	BMEdge *edge = NULL;
+	bool rot_edge = false;
+	float mat[3][3];
+	float new_norm[3];
+	int vert_idx;
+	float mat_coords[3][2], mat_new_pos[2];
 
-	if( !BM_face_point_inside_test(f, new_pos) ){
+	cross_v3_v3v3(new_norm, dv, du);
+	normalize_v3(new_norm);
+
+	axis_dominant_v3_to_m3(mat, new_norm);
+	mul_v2_m3v3(mat_new_pos, mat, new_pos);
+
+	BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
+		mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
+	}
+
+	// BM_face_point_inside_test is too inaccurate to use here as some overhangs are missed with it.
+	// TODO check if point_inside_test needs to be replaced in other places also
+	if( !isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]) ){
 		BMIter iter_e;
 		BMIter iter_f;
 		BMEdge *e;
 		BMFace *face;
 
-        rot_edge = true;
+		rot_edge = true;
 
 		BM_ITER_ELEM (e, &iter_e, f, BM_EDGES_OF_FACE){
 			BM_ITER_ELEM (face, &iter_f, e, BM_FACES_OF_EDGE){
-				if( BM_face_point_inside_test(face, new_pos) ){
-					if( !( is_C_vert( e->v1, m_d->C_verts ) && is_C_vert( e->v2, m_d->C_verts ) ) ){
+				if( face != f ){
+
+					BM_ITER_ELEM_INDEX (vert, &iter_v, face, BM_VERTS_OF_FACE, vert_idx) {
+						mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
+					}
+
+
+					if( isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]) ){
 						edge = e;
 						break;
 					}
@@ -2235,8 +2258,7 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 	copy_v3_v3(vert->co, new_pos);
 
 	//Adjust vert normal to the limit normal
-	cross_v3_v3v3(vert->no, dv, du);
-	normalize_v3(vert->no);
+	copy_v3_v3(vert->no, new_norm);
 
 	if( rot_edge ){
 		BM_edge_rotate(m_d->bm, edge, true, 0);
@@ -2896,15 +2918,25 @@ static void radial_flip( MeshData *m_d ){
 					//Do not flip it
 					continue;
 				}
-				//Check if the flip creates any folds or other troublesome geometry
-				//TODO perhaps need to check for folds manually?
-				//(Is the degenerate check enough or does a manual BM_face_point_inside_test(f, co); needed? )
-				//Returns true if not degenerate
-				if( BM_edge_rotate_check_degenerate(e, l1, l2) ){
-					//We can simply rotate it!
-					BM_edge_rotate(m_d->bm, e, true, 0);
-					flips++;
-					continue;
+				//Check if the flip creates any folds
+				{
+					float mat[3][3];
+					float mat_coords[3][2], mat_new_pos[2];
+
+					axis_dominant_v3_to_m3(mat, edge_vert->no);
+					mul_v2_m3v3(mat_new_pos, mat, edge_vert->co);
+
+					mul_v2_m3v3(mat_coords[0], mat, vert->co);
+					mul_v2_m3v3(mat_coords[1], mat, l1->v->co);
+					mul_v2_m3v3(mat_coords[2], mat, l2->v->co);
+
+                    if( !isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]) ){
+
+						//We can simply rotate it!
+						BM_edge_rotate(m_d->bm, e, true, 0);
+						flips++;
+						continue;
+					}
 				}
 
 				printf("Try to dissolve vert!\n");
