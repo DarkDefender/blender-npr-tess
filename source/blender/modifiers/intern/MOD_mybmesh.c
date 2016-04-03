@@ -2195,29 +2195,39 @@ static bool is_C_vert(BMVert *v, BLI_Buffer *C_verts){
 	return false;
 }
 
-static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
+static bool point_inside(const float mat[3][3], const float point[3], BMFace *f){
+    //TODO maybe add a sanity check to see if the face is not a quad or a triangle
+	float mat_coords[f->len][2], mat_new_pos[2];
 	BMVert *vert;
 	BMIter iter_v;
+	int vert_idx;
+
+	mul_v2_m3v3(mat_new_pos, mat, point);
+	BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
+		mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
+	}
+    
+	if( f->len == 3 ){
+		return isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]);
+	}
+	return isect_point_quad_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2], mat_coords[3]);
+}
+
+static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
+	BMVert *vert;
 	BMEdge *edge = NULL;
 	bool rot_edge = false;
 	float mat[3][3];
 	float new_norm[3];
-	int vert_idx;
-	float mat_coords[3][2], mat_new_pos[2];
 
 	cross_v3_v3v3(new_norm, dv, du);
 	normalize_v3(new_norm);
 
 	axis_dominant_v3_to_m3(mat, new_norm);
-	mul_v2_m3v3(mat_new_pos, mat, new_pos);
-
-	BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
-		mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
-	}
 
 	// BM_face_point_inside_test is too inaccurate to use here as some overhangs are missed with it.
 	// TODO check if point_inside_test needs to be replaced in other places also
-	if( !isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]) ){
+	if( !point_inside(mat, new_pos, f) ){
 		BMIter iter_e;
 		BMIter iter_f;
 		BMEdge *e;
@@ -2229,12 +2239,7 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 			BM_ITER_ELEM (face, &iter_f, e, BM_FACES_OF_EDGE){
 				if( face != f ){
 
-					BM_ITER_ELEM_INDEX (vert, &iter_v, face, BM_VERTS_OF_FACE, vert_idx) {
-						mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
-					}
-
-
-					if( isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]) ){
+					if( point_inside(mat, new_pos, face) ){
 						edge = e;
 						break;
 					}
@@ -2277,6 +2282,7 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 	BMIter iter_f, iter_v;
 	int edge_count, f_idx;
 	bool found_vert = false;
+	float mat[3][3];
 
 	for(f_idx = 0; f_idx < 3; f_idx++){
 		BMFace *f = diff_f[f_idx];
@@ -2285,14 +2291,17 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 				bool e1 = false;
 				bool e2 = false;
 				bool f_cent = false;
+
+				axis_dominant_v3_to_m3(mat, vert->no);
+
 				BM_ITER_ELEM (face, &iter_f, vert, BM_FACES_OF_VERT) {
-					if( BM_face_point_inside_test(face, edge1_mid) ){
+					if( point_inside(mat, edge1_mid, face) ){
 						e1 = true;
 					}
-					if( BM_face_point_inside_test(face, edge2_mid) ){
+					if( point_inside(mat, edge2_mid, face) ){
 						e2 = true;
 					}
-					if( BM_face_point_inside_test(face, cent) ){
+					if( point_inside(mat, cent, face) ){
 						f_cent = true;
 					}
 					if(e1 && e2 && f_cent){
@@ -2319,14 +2328,12 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 
 	{
 		int edge_idx = 0;
-		float mat[3][3];
 
 		BMLoop *first_loop = BM_face_vert_share_loop( vert->e->l->f, vert );
 		BMLoop *cur_loop = first_loop;
 		BMEdge *cur_edge;
 		BMFace *faces[edge_count];
 
-		axis_dominant_v3_to_m3(mat, vert->no);
         cur_edge = vert->e;
         
 		do {
@@ -2357,7 +2364,7 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 								 break;
 					}
 		            
-					if( BM_face_point_inside_test(faces[i], point) ){
+					if( point_inside(mat, point, faces[i]) ){
 						int vert_idx;
 						float st[4][2];
 						float point_v2[2];
@@ -2455,7 +2462,7 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 						interp_v3_v3v3(cur_p, cent, p, step);
 
 						for ( j = 0; j < edge_count; j++) {
-							if( BM_face_point_inside_test(faces[j], cur_p) ){
+							if( point_inside(mat, cur_p, faces[j]) ){
 								int vert_idx;
 								float st[4][2];
 								float point_v2[2];
@@ -2546,10 +2553,10 @@ static void radial_insertion( MeshData *m_d ){
 		BMFace *face_arr[face_count];
 
 		/*
-        if( BM_elem_index_get(vert) != 1051 ){
+        if( BM_elem_index_get(vert) != 1012 ){
 			continue;
 		}
-		*/
+        */
 
 		BM_ITER_ELEM_INDEX (f, &iter_f, vert, BM_FACES_OF_VERT, face_i) {
 			face_arr[face_i] = f;
