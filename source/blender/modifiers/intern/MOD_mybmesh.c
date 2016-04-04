@@ -44,14 +44,13 @@
 #include "BKE_cdderivedmesh.h"
 #include "BKE_modifier.h"
 #include "BKE_deform.h"
-#include "BKE_subsurf.h"
 
 #include "bmesh.h"
 #include "bmesh_tools.h"
 
 #include "MOD_util.h"
 
-#include "intern/CCGSubSurf.h"
+#include "depsgraph_private.h"
 
 //TODO this modifier depends on OSD. So if it's not compiled in, remove this modifier
 #include <opensubdiv/osdutil/evaluator_capi.h>
@@ -3776,8 +3775,33 @@ static DerivedMesh *applyModifier(ModifierData *md, Object *ob,
 	return result;
 }
 
+static void foreachObjectLink(ModifierData *md, Object *ob,
+                              void (*walk)(void *userData, Object *ob, Object **obpoin),
+                              void *userData)
+{
+	MyBMeshModifierData *mmd = (MyBMeshModifierData *)md;
+
+	walk(userData, ob, &mmd->camera_ob);
+}
+
+static void updateDepgraph(ModifierData *md, DagForest *forest,
+                           struct Scene *UNUSED(scene),
+                           Object *UNUSED(ob),
+                           DagNode *obNode)
+{
+	MyBMeshModifierData *mmd = (MyBMeshModifierData *)md;
+
+	if (mmd->camera_ob) {
+		DagNode *latNode = dag_get_node(forest, mmd->camera_ob);
+
+		dag_add_relation(forest, latNode, obNode,
+		                 DAG_RL_DATA_DATA | DAG_RL_OB_DATA, "MyBmesh Modifier");
+	}
+}
+
 static bool dependsOnNormals(ModifierData *UNUSED(md))
 {
+	//TODO it does depend on normals. return true here?
 	return false;
 }
 
@@ -3802,10 +3826,10 @@ ModifierTypeInfo modifierType_MyBMesh = {
 	/* freeData */          NULL,
 	/* isDisabled */        NULL,
 	//TODO implement depgraph
-	/* updateDepgraph */    NULL,
+	/* updateDepgraph */    updateDepgraph,
 	/* dependsOnTime */     NULL,
 	/* dependsOnNormals */  dependsOnNormals,
-	/* foreachObjectLink */ NULL,
+	/* foreachObjectLink */ foreachObjectLink,
 	/* foreachIDLink */     NULL,
 	/* foreachTexLink */    NULL,
 };
