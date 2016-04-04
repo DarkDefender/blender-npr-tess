@@ -3339,7 +3339,7 @@ static void optimization( MeshData *m_d ){
 				if( BM_elem_index_get(vert) < m_d->radi_start_idx ){
 					//not a radial vert, try to smooth the vertex pos and see if the consistency improves
 
-					float old_pos[3], co[3], co2[2];
+					float old_pos[3], co[3], co2[3];
                     int i = 0;
 					bool done = true;
 
