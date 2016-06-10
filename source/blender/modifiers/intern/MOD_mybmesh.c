@@ -3162,6 +3162,9 @@ static void optimization( MeshData *m_d ){
 		}
 	}
 	// 1. Radial edge extension
+	{
+		// TODO
+	}
 
 	// 2. Edge flipping
 	{
@@ -3420,8 +3423,14 @@ static void optimization( MeshData *m_d ){
 	}
 
 	// 3. Vertex wiggling in paramter space
+	{
+		// TODO
+	}
 
 	// 4. Edge Splitting
+	{
+		// TODO
+	}
 
 	// 5. Vertex wiggling in normal direction
 	{
