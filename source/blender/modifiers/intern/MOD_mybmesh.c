@@ -2206,22 +2206,28 @@ static bool is_C_vert(BMVert *v, BLI_Buffer *C_verts){
 	return false;
 }
 
-static bool point_inside(const float mat[3][3], const float point[3], BMFace *f){
+static bool point_inside_v2(const float mat[3][3], const float point[2], BMFace *f){
 	//TODO maybe add a sanity check to see if the face is not a quad or a triangle
-	float mat_coords[f->len][2], mat_new_pos[2];
+	float mat_coords[f->len][2];
 	BMVert *vert;
 	BMIter iter_v;
 	int vert_idx;
 
-	mul_v2_m3v3(mat_new_pos, mat, point);
 	BM_ITER_ELEM_INDEX (vert, &iter_v, f, BM_VERTS_OF_FACE, vert_idx) {
 		mul_v2_m3v3(mat_coords[vert_idx], mat, vert->co);
 	}
 
 	if( f->len == 3 ){
-		return isect_point_tri_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2]);
+		return isect_point_tri_v2(point, mat_coords[0], mat_coords[1], mat_coords[2]);
 	}
-	return isect_point_quad_v2(mat_new_pos, mat_coords[0], mat_coords[1], mat_coords[2], mat_coords[3]);
+	return isect_point_quad_v2(point, mat_coords[0], mat_coords[1], mat_coords[2], mat_coords[3]);
+}
+
+static bool point_inside(const float mat[3][3], const float point[3], BMFace *f){
+	float mat_new_pos[2];
+	mul_v2_m3v3(mat_new_pos, mat, point);
+
+	return point_inside_v2(mat, mat_new_pos, f);
 }
 
 static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
@@ -3146,6 +3152,25 @@ static void optimization( MeshData *m_d ){
 						continue;
 					}
 
+					{
+						// This shouldn't be needed, but in case we manage to have inconsistent
+						// faces that borders our contour line, don't mark it for adjustment.
+						BMVert *v;
+						BMIter iter;
+						bool found_c_vert = false;
+
+						BM_ITER_ELEM (v, &iter, face, BM_VERTS_OF_FACE) {
+							if( is_C_vert(v, m_d->C_verts) ) {
+								found_c_vert = true;
+								break;
+							}
+						}
+
+						if( found_c_vert ) {
+							continue;
+						}
+
+					}
 					BM_face_calc_center_mean(face, P);
 
 					if( b_f != calc_if_B_nor(m_d->cam_loc, P, face->no) ){
@@ -3423,13 +3448,31 @@ static void optimization( MeshData *m_d ){
 	}
 
 	// 3. Vertex wiggling in paramter space
-	{
-		// TODO
-	}
+	
 
 	// 4. Edge Splitting
 	{
 		// TODO
+		/*
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+
+			BMEdge *edge;
+			BMIter iter_v;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (edge, &iter_v, inface->face, BM_EDGES_OF_FACE) {
+				if( BM_elem_index_get(edge->v1) < m_d->radi_start_idx || BM_elem_index_get(edge-v2) < m_d->radi_start_idx ){
+				}
+			}
+		}
+		*/
 	}
 
 	// 5. Vertex wiggling in normal direction
