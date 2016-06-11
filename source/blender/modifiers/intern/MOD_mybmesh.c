@@ -2230,6 +2230,33 @@ static bool point_inside(const float mat[3][3], const float point[3], BMFace *f)
 	return point_inside_v2(mat, mat_new_pos, f);
 }
 
+static void get_uv_point(BMFace *face, float uv[2], const float point_v2[2], const float mat[3][3] ){
+	int vert_idx;
+	float st[4][2];
+
+	BMVert *v;
+	BMIter iter_v;
+
+	BM_ITER_ELEM_INDEX (v, &iter_v, face, BM_VERTS_OF_FACE, vert_idx) {
+		switch(vert_idx){
+			case 1 :
+				mul_v2_m3v3(st[1], mat, v->co);
+				break;
+			case 2 :
+				mul_v2_m3v3(st[2], mat, v->co);
+				break;
+			case 3 :
+				mul_v2_m3v3(st[3], mat, v->co);
+				break;
+			default:
+				mul_v2_m3v3(st[0], mat, v->co);
+				break;
+		}
+	}
+
+	resolve_quad_uv_v2(uv, point_v2, st[0], st[1], st[2], st[3]);
+}
+
 static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
 	BMVert *vert;
 	BMEdge *edge = NULL;
@@ -2385,31 +2412,12 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 					}
 
 					if( point_inside(mat, point, faces[i]) ){
-						int vert_idx;
-						float st[4][2];
 						float point_v2[2];
 						float P[3], du[3], dv[3], temp[3];
-						BMVert *v;
-						BM_ITER_ELEM_INDEX (v, &iter_v, faces[i], BM_VERTS_OF_FACE, vert_idx) {
-							switch(vert_idx){
-								case 1 :
-									mul_v2_m3v3(st[1], mat, v->co);
-									break;
-								case 2 :
-									mul_v2_m3v3(st[2], mat, v->co);
-									break;
-								case 3 :
-									mul_v2_m3v3(st[3], mat, v->co);
-									break;
-								default:
-									mul_v2_m3v3(st[0], mat, v->co);
-									break;
-							}
-						}
 
 						mul_v2_m3v3(point_v2, mat, point);
 
-						resolve_quad_uv_v2(uvs[j], point_v2, st[0], st[1], st[2], st[3]);
+                        get_uv_point(faces[i], uvs[j], point_v2, mat);
 
 						face_ids[j] = faces[i];
 						if( j == 0 ){
@@ -2511,29 +2519,10 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 
 						for ( j = 0; j < edge_count; j++) {
 							if( point_inside(mat, cur_p, faces[j]) ){
-								int vert_idx;
-								float st[4][2];
 								float point_v2[2];
-								BMVert *v;
-								BM_ITER_ELEM_INDEX (v, &iter_v, faces[j], BM_VERTS_OF_FACE, vert_idx) {
-									switch(vert_idx){
-										case 1 :
-											mul_v2_m3v3(st[1], mat, v->co);
-											break;
-										case 2 :
-											mul_v2_m3v3(st[2], mat, v->co);
-											break;
-										case 3 :
-											mul_v2_m3v3(st[3], mat, v->co);
-											break;
-										default:
-											mul_v2_m3v3(st[0], mat, v->co);
-											break;
-									}
-								}
 								mul_v2_m3v3(point_v2, mat, cur_p);
 
-								resolve_quad_uv_v2(uv_P, point_v2, st[0], st[1], st[2], st[3]);
+								get_uv_point(faces[j], uv_P, point_v2, mat);
 
 								orig_face = faces[j];
 								face_index = BM_elem_index_get(faces[j]);
