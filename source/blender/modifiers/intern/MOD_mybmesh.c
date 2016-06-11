@@ -2417,7 +2417,7 @@ static void mult_radi_search( BMFace *diff_f[3], const float cent[3], const floa
 
 						mul_v2_m3v3(point_v2, mat, point);
 
-                        get_uv_point(faces[i], uvs[j], point_v2, mat);
+						get_uv_point(faces[i], uvs[j], point_v2, mat);
 
 						face_ids[j] = faces[i];
 						if( j == 0 ){
@@ -3437,16 +3437,131 @@ static void optimization( MeshData *m_d ){
 	}
 
 	// 3. Vertex wiggling in paramter space
-	
-
-	// 4. Edge Splitting
-	{
-		// TODO
-		/*
+	/*{
 		int face_i;
 
 		for(face_i = 0; face_i < inco_faces.count; face_i++){
 			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+			int orig_verts = BM_mesh_elem_count(m_d->bm_orig, BM_VERT);
+
+			BMVert *vert;
+			BMIter iter_v;
+
+			if( inface->face == NULL ){
+				//Already fixed this edge
+				continue;
+			}
+
+			BM_ITER_ELEM (vert, &iter_v, inface->face, BM_VERTS_OF_FACE) {
+				int idx = BM_elem_index_get(vert);
+				if( idx < orig_verts ){
+					// This vert exists in the original mesh
+					BMVert *orig_v = BM_vert_at_index_find(m_d->bm_orig, idx);
+					int edge_count = BM_vert_edge_count(vert);
+
+					// We are going to search for a new position using a spiral
+					float end_radius = 0;
+					float cur_radian = 0;
+					float max_turns = 4; // How many turnings the spiral should have
+
+					bool done = false;
+
+					BMEdge *e;
+					BMIter iter;
+					BM_ITER_ELEM (e, &iter, vert, BM_EDGES_OF_VERT) {
+						end_radius += BM_edge_calc_length(e);
+					}
+
+					end_radius = end_radius / (float)edge_count;
+					end_radius = end_radius / 2.0f;
+
+					{
+						// radius = b * theta
+						float b = (end_radius / max_turns) * (1.0f / (2.0f * M_PI));
+						float step_size = (max_turns * 2.0f * M_PI) / 100.0f;
+						int i;
+
+						BMFace *f;
+						BMIter iter_f;
+
+						float mat[3][3];
+						float center_v2[2];
+						float old_pos[3];
+
+						copy_v3_v3( old_pos, vert->co );
+
+						axis_dominant_v3_to_m3(mat, vert->no);
+						mul_v2_m3v3(center_v2, mat, vert->co);
+
+						for( i=0; i<100; i++ ){
+							float theta = step_size * (float)i;
+							float r = b * theta;
+							float pos_v2[2] = { center_v2[0], center_v2[1] };
+
+							bool found_point = true;
+
+							pos_v2[0] += r * cosf(theta);
+							pos_v2[1] += r * sinf(theta);
+
+							// TODO check if the new point lies inside any of the new mesh faces
+
+							BM_ITER_ELEM (f, &iter_f, orig_v, BM_FACES_OF_VERT) {
+								if( point_inside_v2( mat, pos_v2, f ) ){
+									float P[3], du[3], dv[3];
+									float uv_P[2];
+
+									get_uv_point( f, uv_P, pos_v2, mat );
+									openSubdiv_evaluateLimit(m_d->eval, BM_elem_index_get(f), uv_P[0], uv_P[1], P, du, dv);
+
+									copy_v3_v3(vert->co, P);
+									//No need to iterate over the remaining faces
+									break;
+								}
+							}
+
+							BM_ITER_ELEM (f, &iter_f, vert, BM_FACES_OF_VERT) {
+								float no[3];
+								float P[3];
+								BM_face_calc_normal(f, no);
+								BM_face_calc_center_mean(f, P);
+
+								if( inface->back_f != calc_if_B_nor(m_d->cam_loc, P, no) ){
+									found_point = false;
+									break;
+								}
+							}
+
+							if( found_point ){
+								done = true;
+								break;
+							}
+						}
+
+						if( done ){
+							inface->face->mat_nr = 0;
+							inface->face = NULL;
+							printf("Vertex wiggle\n");
+							break;
+						} else {
+							printf("Bad Vertex wiggle\n");
+							copy_v3_v3(vert->co, old_pos);
+						}
+					}
+
+
+				}
+			}
+		}
+	}*/
+
+	// 4. Edge Splitting
+	/*{
+		// TODO
+		int face_i;
+
+		for(face_i = 0; face_i < inco_faces.count; face_i++){
+			IncoFace *inface = &BLI_buffer_at(&inco_faces, IncoFace, face_i);
+			int orig_verts = BM_mesh_elem_count(m_d->bm_orig, BM_VERT);
 
 			BMEdge *edge;
 			BMIter iter_v;
@@ -3457,12 +3572,116 @@ static void optimization( MeshData *m_d ){
 			}
 
 			BM_ITER_ELEM (edge, &iter_v, inface->face, BM_EDGES_OF_FACE) {
-				if( BM_elem_index_get(edge->v1) < m_d->radi_start_idx || BM_elem_index_get(edge-v2) < m_d->radi_start_idx ){
+				BMVert *orig_v = NULL;
+				BMFace *f;
+				BMIter iter_f;
+
+				// Storage for vertex pos
+				// This is used later to see if the edge split will be ok or not
+				float store[4][2][3];
+				int j = 0;
+
+				if( BM_elem_index_get(edge->v1) < orig_verts ){
+					int idx = BM_elem_index_get(edge->v1);
+					orig_v = BM_vert_at_index_find(m_d->bm_orig, idx);
+				} else if ( BM_elem_index_get(edge->v2) < orig_verts ){
+					int idx = BM_elem_index_get(edge->v2);
+					orig_v = BM_vert_at_index_find(m_d->bm_orig, idx);
+				}
+
+				if( orig_v == NULL ){
+					continue;
+				}
+
+				BM_ITER_ELEM (f, &iter_f, edge, BM_FACES_OF_EDGE) {
+					int i;
+					BMLoop *l;
+					l = BM_FACE_FIRST_LOOP(f);
+					for( i = 0; i < 3; i++ ){
+						if( l->e != edge ) {
+							copy_v3_v3(store[j][0], l->v->co);
+							copy_v3_v3(store[j][1], (l->next)->v->co);
+							j++;
+						}
+						l = l->next;
+					}
+				}
+
+				{
+					//Do 10 samples but don't check end and start point
+					float step = 1.0f/11.0f;
+					float step_arr[] = { step*5.0f, step*6.0f, step*4.0f, step*7.0f, step*3.0f,
+						step*8.0f, step*2.0f, step*9.0f, step*1.0f, step*10.0f };
+
+
+					float mat[3][3];
+					float start[2], end[2];
+					int i;
+					bool done = false;
+
+					axis_dominant_v3_to_m3(mat, orig_v->no);
+					mul_v2_m3v3(start, mat, edge->v1->co);
+					mul_v2_m3v3(end, mat, edge->v2->co);
+					for( i = 0; i < 10; i++ ){
+						float cur_v2[2];
+						float P[3], du[3], dv[3];
+						bool found_point = false;
+
+						interp_v2_v2v2(cur_v2, start, end, step_arr[i]);
+
+						BM_ITER_ELEM (f, &iter_f, orig_v, BM_FACES_OF_VERT) {
+							if( point_inside_v2( mat, cur_v2, f ) ){
+								float uv_P[2];
+
+								get_uv_point( f, uv_P, cur_v2, mat );
+								openSubdiv_evaluateLimit(m_d->eval, BM_elem_index_get(f), uv_P[0], uv_P[1], P, du, dv);
+
+								found_point = true;
+								//No need to iterate over the remaining faces
+								break;
+							}
+						}
+
+						if( found_point ) {
+							float p_cent[3];
+							float no[3];
+							done = true;
+
+							for( j = 0; j < 4; j++ ){
+								zero_v3(p_cent);
+								add_v3_v3(p_cent, store[j][0]);
+								add_v3_v3(p_cent, store[j][1]);
+								add_v3_v3(p_cent, P);
+
+								mul_v3_fl(p_cent, 1.0f / 3.0f);
+
+								normal_tri_v3(no, store[j][0], store[j][1], P);
+								if( inface->back_f != calc_if_B_nor(m_d->cam_loc, p_cent, no) ){
+									done = false;
+									break;
+								}
+							}
+
+							if( done ) {
+								inface->face->mat_nr = 0;
+								inface->face = NULL;
+								print_v3("P", P);
+								//TODO this will fail because we have dissolved stuff before...
+								split_edge_and_move_vert(m_d->bm, edge, P, du, dv);
+
+								break;
+							}
+						}
+
+					}
+					if( done ) {
+						break;
+					}
+
 				}
 			}
 		}
-		*/
-	}
+	}*/
 
 	// 5. Vertex wiggling in normal direction
 	{
