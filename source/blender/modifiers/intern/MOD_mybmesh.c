@@ -3470,7 +3470,7 @@ static void optimization( MeshData *m_d ){
 	}
 
 	// 3. Vertex wiggling in paramter space
-	/*{
+	{
 		int face_i;
 
 		for(face_i = 0; face_i < inco_faces.count; face_i++){
@@ -3585,10 +3585,10 @@ static void optimization( MeshData *m_d ){
 				}
 			}
 		}
-	}*/
+	}
 
 	// 4. Edge Splitting
-	/*{
+	{
 		// TODO
 		int face_i;
 
@@ -3698,8 +3698,6 @@ static void optimization( MeshData *m_d ){
 							if( done ) {
 								inface->face->mat_nr = 0;
 								inface->face = NULL;
-								print_v3("P", P);
-								//TODO this will fail because we have dissolved stuff before...
 								split_edge_and_move_vert(m_d->bm, edge, P, du, dv);
 
 								break;
@@ -3714,7 +3712,7 @@ static void optimization( MeshData *m_d ){
 				}
 			}
 		}
-	}*/
+	}
 
 	// 5. Vertex wiggling in normal direction
 	{
