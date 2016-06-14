@@ -190,22 +190,31 @@ static BMVert *split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new
 									const float du[3], const float dv[3]){
 	//Split edge one time and move the created vert to new_pos
 
-	BMVert *vert;
+	BMVert *vert, *temp_v;
+	BMOperator div_op;
+	BMOIter oiter;
+
 	printf("Split edge!\n");
 
 	BM_mesh_elem_hflag_disable_all(bm, BM_EDGE, BM_ELEM_TAG, false);
 	BM_elem_flag_enable(edge, BM_ELEM_TAG);
-	BMO_op_callf(bm, BMO_FLAG_DEFAULTS,
+	BMO_op_initf(bm, &div_op, BMO_FLAG_DEFAULTS,
 			"subdivide_edges edges=%he cuts=%i quad_corner_type=%i use_single_edge=%b",
-			BM_ELEM_TAG, 1, SUBD_STRAIGHT_CUT, true);
-	//Get the newly created vertex
-	vert = BM_vert_at_index_find(bm, BM_mesh_elem_count(bm, BM_VERT) - 1);
-	copy_v3_v3(vert->co, new_pos);
+			BM_ELEM_TAG, 1, SUBD_STRAIGHT_CUT, true, "geom.out");
 
+	BMO_op_exec(bm, &div_op);
+
+	//Get the newly created vertex
+	BMO_ITER (temp_v, &oiter, div_op.slots_out, "geom.out", BM_VERT) {
+		vert = temp_v;
+	}
+
+	copy_v3_v3(vert->co, new_pos);
 	//Adjust vert normal to the limit normal
 	cross_v3_v3v3(vert->no, dv, du);
 	normalize_v3(vert->no);
 
+	BMO_op_finish(bm, &div_op);
 	return vert;
 }
 
@@ -213,18 +222,28 @@ static BMVert *split_edge_and_move_vert(BMesh *bm, BMEdge *edge, const float new
 static BMVert* split_edge_and_move_cusp(BMesh *bm, BMEdge *edge, const float new_pos[3], const float new_no[3]){
 	//Split edge one time and move the created vert to new_pos
 
-	BMVert *vert;
+	BMVert *vert, *temp_v;
+	BMOperator div_op;
+	BMOIter oiter;
 	printf("Cusp split!\n");
 
 	BM_mesh_elem_hflag_disable_all(bm, BM_EDGE, BM_ELEM_TAG, false);
 	BM_elem_flag_enable(edge, BM_ELEM_TAG);
-	BMO_op_callf(bm, BMO_FLAG_DEFAULTS,
+	BMO_op_initf(bm, &div_op, BMO_FLAG_DEFAULTS,
 			"subdivide_edges edges=%he cuts=%i quad_corner_type=%i use_single_edge=%b",
-			BM_ELEM_TAG, 1, SUBD_STRAIGHT_CUT, true);
+			BM_ELEM_TAG, 1, SUBD_STRAIGHT_CUT, true, "geom.out");
+
+	BMO_op_exec(bm, &div_op);
+
 	//Get the newly created vertex
-	vert = BM_vert_at_index_find(bm, BM_mesh_elem_count(bm, BM_VERT) - 1);
+	BMO_ITER (temp_v, &oiter, div_op.slots_out, "geom.out", BM_VERT) {
+		vert = temp_v;
+	}
+
 	copy_v3_v3(vert->co, new_pos);
 	copy_v3_v3(vert->no, new_no);
+
+	BMO_op_finish(bm, &div_op);
 	return vert;
 }
 
@@ -2258,7 +2277,10 @@ static void get_uv_point(BMFace *face, float uv[2], const float point_v2[2], con
 }
 
 static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], const float dv[3], MeshData *m_d){
-	BMVert *vert;
+	BMVert *vert, *temp_v;
+	BMOperator poke_op;
+	BMOIter oiter;
+
 	BMEdge *edge = NULL;
 	bool rot_edge = false;
 	float mat[3][3];
@@ -2301,9 +2323,17 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 
 	BM_mesh_elem_hflag_disable_all(m_d->bm, BM_FACE, BM_ELEM_TAG, false);
 	BM_elem_flag_enable(f, BM_ELEM_TAG);
-	BMO_op_callf(m_d->bm, BMO_FLAG_DEFAULTS, "poke faces=%hf", BM_ELEM_TAG);
+
+	BMO_op_initf(m_d->bm, &poke_op, BMO_FLAG_DEFAULTS,
+			"poke faces=%hf", BM_ELEM_TAG, "verts.out");
+
+	BMO_op_exec(m_d->bm, &poke_op);
+
 	//Get the newly created vertex
-	vert = BM_vert_at_index_find(m_d->bm, BM_mesh_elem_count(m_d->bm, BM_VERT) - 1);
+	BMO_ITER (temp_v, &oiter, poke_op.slots_out, "verts.out", BM_VERT) {
+		vert = temp_v;
+	}
+
 	copy_v3_v3(vert->co, new_pos);
 
 	//Adjust vert normal to the limit normal
@@ -2313,6 +2343,9 @@ static bool poke_and_move(BMFace *f, const float new_pos[3], const float du[3], 
 		BM_edge_rotate(m_d->bm, edge, true, 0);
 		printf("rotated edge!\n");
 	}
+
+
+	BMO_op_finish(m_d->bm, &poke_op);
 
 	return true;
 }
